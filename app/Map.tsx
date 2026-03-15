@@ -232,10 +232,10 @@ export function Map() {
 
       <div
         style={{
-          position: "absolute",
-          bottom: 12,
-          left: 12,
-          zIndex: 1000,
+          position: "fixed",
+          bottom: "calc(12px + env(safe-area-inset-bottom))",
+          left: "calc(12px + env(safe-area-inset-left))",
+          zIndex: 2000,
         }}
       >
         <button
@@ -251,6 +251,7 @@ export function Map() {
             fontSize: 14,
             opacity: !position || isSaving ? 0.6 : 1,
             cursor: !position || isSaving ? "not-allowed" : "pointer",
+            touchAction: "manipulation",
           }}
         >
           {isSaving ? "Saving…" : "Save location"}
