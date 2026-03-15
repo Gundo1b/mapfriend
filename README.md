@@ -20,6 +20,17 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Supabase (optional)
+
+This app saves locations via `POST /api/locations`.
+
+- Locations are stored in Supabase table `public.locations`.
+
+Setup:
+
+1. Copy `.env.example` to `.env.local` and fill in your keys.
+2. Run the SQL in `supabase/locations.sql` in your Supabase SQL editor.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
