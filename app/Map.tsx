@@ -11,7 +11,7 @@ import {
   useMap,
   useMapEvents,
 } from "react-leaflet";
-import { divIcon } from "leaflet";
+import { divIcon, latLngBounds, type Map as LeafletMap } from "leaflet";
 
 type Position = {
   lat: number;
@@ -60,7 +60,18 @@ function FollowLocation({
   return null;
 }
 
+function MapRefSetter({ onMap }: { onMap: (map: LeafletMap) => void }) {
+  const map = useMap();
+
+  useEffect(() => {
+    onMap(map);
+  }, [map, onMap]);
+
+  return null;
+}
+
 export function Map() {
+  const [map, setMap] = useState<LeafletMap | null>(null);
   const [position, setPosition] = useState<Position | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(true);
@@ -76,7 +87,8 @@ export function Map() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
-  const [followUser, setFollowUser] = useState(true);
+  const [followUser, setFollowUser] = useState(false);
+  const [hasAutoFitted, setHasAutoFitted] = useState(false);
 
   useEffect(() => {
     if (!window.isSecureContext) {
@@ -230,6 +242,12 @@ export function Map() {
     };
   }, [user]);
 
+  useEffect(() => {
+    if (!map || hasAutoFitted || savedLocations.length === 0) return;
+    fitAllPeople();
+    setHasAutoFitted(true);
+  }, [hasAutoFitted, map, savedLocations.length]);
+
   async function submitAuth() {
     setIsAuthSubmitting(true);
     setAuthError(null);
@@ -283,6 +301,14 @@ export function Map() {
     }
   }
 
+  function fitAllPeople() {
+    if (!map || savedLocations.length === 0) return;
+
+    const points = savedLocations.map((l) => [l.lat, l.lng] as [number, number]);
+    const bounds = latLngBounds(points);
+    map.fitBounds(bounds, { padding: [40, 40] });
+  }
+
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative" }}>
       <MapContainer
@@ -295,6 +321,8 @@ export function Map() {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+
+        <MapRefSetter onMap={setMap} />
 
         <FollowLocation
           position={position}
@@ -388,6 +416,27 @@ export function Map() {
           alignItems: "flex-start",
         }}
       >
+        <button
+          type="button"
+          onClick={fitAllPeople}
+          disabled={savedLocations.length === 0 || !map}
+          style={{
+            background: "rgba(255,255,255,0.95)",
+            color: "#111827",
+            border: "1px solid rgba(0,0,0,0.10)",
+            borderRadius: 9999,
+            padding: "10px 12px",
+            fontSize: 14,
+            opacity: savedLocations.length === 0 || !map ? 0.6 : 1,
+            cursor: savedLocations.length === 0 || !map ? "not-allowed" : "pointer",
+            touchAction: "manipulation",
+            whiteSpace: "nowrap",
+          }}
+          title="Zoom to all saved people"
+        >
+          People ({savedLocations.length})
+        </button>
+
         <button
           type="button"
           onClick={() => setFollowUser(true)}
