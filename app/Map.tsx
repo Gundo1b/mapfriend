@@ -233,8 +233,8 @@ export function Map() {
       <div
         style={{
           position: "fixed",
-          bottom: "calc(12px + env(safe-area-inset-bottom))",
-          left: "calc(12px + env(safe-area-inset-left))",
+          bottom: 12,
+          left: 12,
           zIndex: 2000,
         }}
       >
