@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "../../lib/supabaseAdmin";
+import { getSessionUser } from "../../lib/auth";
 
 type LocationPayload = {
   lat: number;
@@ -15,9 +16,14 @@ export async function GET() {
     );
   }
 
+  const user = await getSessionUser();
+  if (!user) {
+    return Response.json({ ok: false, error: "Unauthorized." }, { status: 401 });
+  }
+
   const { data, error } = await supabase
     .from("locations")
-    .select("lat,lng")
+    .select("lat,lng,user_id")
     .order("created_at", { ascending: false })
     .limit(1000);
 
@@ -25,7 +31,38 @@ export async function GET() {
     return Response.json({ ok: false, error: error.message }, { status: 500 });
   }
 
-  return Response.json({ ok: true, locations: data ?? [] });
+  const locations = (data ?? []).map((row) => ({
+    lat: row.lat,
+    lng: row.lng,
+    user_id: row.user_id as string | null,
+  }));
+
+  const userIds = Array.from(
+    new Set(locations.map((l) => l.user_id).filter((id): id is string => !!id)),
+  );
+
+  let usernamesById = new Map<string, string>();
+  if (userIds.length) {
+    const { data: users, error: usersError } = await supabase
+      .from("users")
+      .select("id,username")
+      .in("id", userIds);
+
+    if (usersError) {
+      return Response.json({ ok: false, error: usersError.message }, { status: 500 });
+    }
+
+    usernamesById = new Map((users ?? []).map((u) => [u.id as string, u.username as string]));
+  }
+
+  return Response.json({
+    ok: true,
+    locations: locations.map((l) => ({
+      lat: l.lat,
+      lng: l.lng,
+      username: l.user_id ? usernamesById.get(l.user_id) ?? null : null,
+    })),
+  });
 }
 
 export async function POST(request: Request) {
@@ -65,7 +102,13 @@ export async function POST(request: Request) {
     );
   }
 
+  const user = await getSessionUser();
+  if (!user) {
+    return Response.json({ ok: false, error: "Unauthorized." }, { status: 401 });
+  }
+
   const { error } = await supabase.from("locations").insert({
+    user_id: user.id,
     lat,
     lng,
     accuracy: typeof accuracy === "number" && Number.isFinite(accuracy) ? accuracy : null,

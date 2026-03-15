@@ -5,10 +5,12 @@ import {
   Circle,
   CircleMarker,
   MapContainer,
+  Marker,
   Popup,
   TileLayer,
   useMap,
 } from "react-leaflet";
+import { divIcon } from "leaflet";
 
 type Position = {
   lat: number;
@@ -19,6 +21,12 @@ type Position = {
 type SavedLocation = {
   lat: number;
   lng: number;
+  username?: string | null;
+};
+
+type User = {
+  username: string;
+  purpose: "friends" | "hangout" | "hookup" | "social";
 };
 
 function FollowLocation({ position }: { position: Position | null }) {
@@ -41,6 +49,15 @@ export function Map() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"register" | "login">("register");
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authPurpose, setAuthPurpose] = useState<User["purpose"]>("friends");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
 
   useEffect(() => {
     if (!window.isSecureContext) {
@@ -94,31 +111,37 @@ export function Map() {
   const initialCenter = useMemo<[number, number]>(() => [0, 0], []);
 
   useEffect(() => {
+    if (!position || hasCheckedAuth) return;
+
     let cancelled = false;
 
-    async function loadSaved() {
+    async function loadMe() {
       try {
-        const res = await fetch("/api/locations", { method: "GET" });
-        if (!res.ok) return;
-        const data = (await res.json()) as
-          | { ok: true; locations: SavedLocation[] }
-          | { ok: false; error: string };
+        const res = await fetch("/api/me", { method: "GET" });
+        const data = (await res.json()) as { ok: true; user: User | null };
         if (cancelled) return;
-        if (data.ok) setSavedLocations(data.locations);
+        setUser(data.user);
+        if (!data.user) setAuthOpen(true);
       } catch {
-        // ignore
+        if (!cancelled) setAuthOpen(true);
+      } finally {
+        if (!cancelled) setHasCheckedAuth(true);
       }
     }
 
-    void loadSaved();
+    void loadMe();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hasCheckedAuth, position]);
 
   async function saveCurrentLocation() {
     if (!position) return;
+    if (!user) {
+      setAuthOpen(true);
+      return;
+    }
 
     setIsSaving(true);
     setSaveMessage(null);
@@ -135,6 +158,10 @@ export function Map() {
       });
 
       if (!res.ok) {
+        if (res.status === 401) {
+          setAuthOpen(true);
+          throw new Error("Please log in.");
+        }
         const data = (await res.json().catch(() => null)) as
           | { error?: string }
           | null;
@@ -142,12 +169,87 @@ export function Map() {
       }
 
       setSaveMessage("Saved");
-      setSavedLocations((prev) => [{ lat: position.lat, lng: position.lng }, ...prev]);
+      setSavedLocations((prev) => [
+        { lat: position.lat, lng: position.lng, username: user.username },
+        ...prev,
+      ]);
       setTimeout(() => setSaveMessage(null), 2500);
     } catch (e) {
       setSaveMessage(e instanceof Error ? e.message : "Save failed.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+
+    async function loadSaved() {
+      try {
+        const res = await fetch("/api/locations", { method: "GET" });
+        if (res.status === 401) {
+          if (!cancelled) setAuthOpen(true);
+          return;
+        }
+        if (!res.ok) return;
+        const data = (await res.json()) as
+          | { ok: true; locations: SavedLocation[] }
+          | { ok: false; error: string };
+        if (cancelled) return;
+        if (data.ok) setSavedLocations(data.locations);
+      } catch {
+        // ignore
+      }
+    }
+
+    void loadSaved();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  async function submitAuth() {
+    setIsAuthSubmitting(true);
+    setAuthError(null);
+
+    try {
+      const endpoint =
+        authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+
+      const payload =
+        authMode === "register"
+          ? {
+              username: authUsername.trim(),
+              password: authPassword,
+              purpose: authPurpose,
+            }
+          : { username: authUsername.trim(), password: authPassword };
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = (await res.json().catch(() => null)) as
+        | { ok: true; user: User }
+        | { ok: false; error: string }
+        | null;
+
+      if (!res.ok || !data || !("ok" in data) || !data.ok) {
+        throw new Error((data as { error?: string } | null)?.error || "Failed.");
+      }
+
+      setUser(data.user);
+      setAuthOpen(false);
+      setAuthPassword("");
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : "Failed.");
+    } finally {
+      setIsAuthSubmitting(false);
     }
   }
 
@@ -190,16 +292,27 @@ export function Map() {
         )}
 
         {savedLocations.map((loc, idx) => (
-          <CircleMarker
+          <Marker
             key={`${loc.lat},${loc.lng},${idx}`}
-            center={[loc.lat, loc.lng]}
-            radius={6}
-            pathOptions={{ color: "#b91c1c", fillColor: "#ef4444" }}
+            position={[loc.lat, loc.lng]}
+            icon={divIcon({
+              className: "",
+              html: `
+                <div style="display:flex; flex-direction:column; align-items:center; transform: translateY(-6px);">
+                  <div style="font-size:12px; line-height:1; padding:3px 6px; border-radius:10px; background:rgba(255,255,255,0.95); border:1px solid rgba(0,0,0,0.10); color:#111827; white-space:nowrap;">
+                    ${escapeHtml(loc.username?.trim() ? loc.username : "a")}
+                  </div>
+                  <div style="width:12px; height:12px; margin-top:4px; border-radius:9999px; background:#ef4444; border:2px solid #b91c1c;"></div>
+                </div>
+              `,
+              iconSize: [120, 36],
+              iconAnchor: [60, 30],
+            })}
           >
             <Popup>
-              hello
+              {loc.username?.trim() ? loc.username : "a"}
             </Popup>
-          </CircleMarker>
+          </Marker>
         ))}
       </MapContainer>
 
@@ -241,7 +354,7 @@ export function Map() {
         <button
           type="button"
           onClick={saveCurrentLocation}
-          disabled={!position || isSaving}
+          disabled={!position || isSaving || !user}
           style={{
             background: "#111827",
             color: "white",
@@ -249,8 +362,8 @@ export function Map() {
             borderRadius: 9999,
             padding: "10px 12px",
             fontSize: 14,
-            opacity: !position || isSaving ? 0.6 : 1,
-            cursor: !position || isSaving ? "not-allowed" : "pointer",
+            opacity: !position || isSaving || !user ? 0.6 : 1,
+            cursor: !position || isSaving || !user ? "not-allowed" : "pointer",
             touchAction: "manipulation",
           }}
         >
@@ -272,6 +385,162 @@ export function Map() {
           </div>
         )}
       </div>
+
+      {authOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 3000,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              background: "white",
+              borderRadius: 16,
+              padding: 16,
+              border: "1px solid rgba(0,0,0,0.08)",
+            }}
+          >
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <button
+                type="button"
+                onClick={() => setAuthMode("register")}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(0,0,0,0.12)",
+                  background: authMode === "register" ? "#111827" : "white",
+                  color: authMode === "register" ? "white" : "#111827",
+                }}
+              >
+                Register
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthMode("login")}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(0,0,0,0.12)",
+                  background: authMode === "login" ? "#111827" : "white",
+                  color: authMode === "login" ? "white" : "#111827",
+                }}
+              >
+                Login
+              </button>
+            </div>
+
+            <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>
+              Username
+            </label>
+            <input
+              value={authUsername}
+              onChange={(e) => setAuthUsername(e.target.value)}
+              autoCapitalize="none"
+              autoCorrect="off"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(0,0,0,0.12)",
+                marginBottom: 12,
+              }}
+            />
+
+            <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>
+              Password
+            </label>
+            <input
+              value={authPassword}
+              onChange={(e) => setAuthPassword(e.target.value)}
+              type="password"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(0,0,0,0.12)",
+                marginBottom: 12,
+              }}
+            />
+
+            {authMode === "register" && (
+              <>
+                <label
+                  style={{ display: "block", fontSize: 13, marginBottom: 6 }}
+                >
+                  Purpose
+                </label>
+                <select
+                  value={authPurpose}
+                  onChange={(e) =>
+                    setAuthPurpose(e.target.value as User["purpose"])
+                  }
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(0,0,0,0.12)",
+                    marginBottom: 12,
+                    background: "white",
+                  }}
+                >
+                  <option value="friends">friends</option>
+                  <option value="hangout">hangout</option>
+                  <option value="hookup">hookup</option>
+                  <option value="social">social</option>
+                </select>
+              </>
+            )}
+
+            {authError && (
+              <div style={{ color: "#b91c1c", fontSize: 13, marginBottom: 10 }}>
+                {authError}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={submitAuth}
+              disabled={isAuthSubmitting}
+              style={{
+                width: "100%",
+                background: "#111827",
+                color: "white",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                fontSize: 14,
+                opacity: isAuthSubmitting ? 0.7 : 1,
+              }}
+            >
+              {isAuthSubmitting
+                ? "Please wait…"
+                : authMode === "register"
+                  ? "Create account"
+                  : "Login"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
