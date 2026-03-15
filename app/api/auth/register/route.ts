@@ -5,6 +5,7 @@ type RegisterPayload = {
   username: string;
   password: string;
   purpose: "friends" | "hangout" | "hookup" | "social";
+  location?: { lat: number; lng: number; accuracy?: number };
 };
 
 const PURPOSES = new Set(["friends", "hangout", "hookup", "social"] as const);
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
   const username = payload?.username?.trim();
   const password = payload?.password ?? "";
   const purpose = payload?.purpose;
+  const location = payload?.location;
 
   if (!username || username.length < 3 || username.length > 24) {
     return Response.json(
@@ -43,6 +45,26 @@ export async function POST(request: Request) {
   }
   if (!purpose || !PURPOSES.has(purpose)) {
     return Response.json({ ok: false, error: "Invalid purpose." }, { status: 400 });
+  }
+
+  const lat = location?.lat;
+  const lng = location?.lng;
+  const accuracy = location?.accuracy;
+  const hasValidLocation =
+    typeof lat === "number" &&
+    Number.isFinite(lat) &&
+    typeof lng === "number" &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180;
+
+  if (!hasValidLocation) {
+    return Response.json(
+      { ok: false, error: "Location is required to register." },
+      { status: 400 },
+    );
   }
 
   const { data: existing, error: existingError } = await supabase
@@ -73,8 +95,19 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: insertError.message }, { status: 500 });
   }
 
+  const { error: locationError } = await supabase.from("locations").insert({
+    user_id: inserted.id,
+    lat,
+    lng,
+    accuracy: typeof accuracy === "number" && Number.isFinite(accuracy) ? accuracy : null,
+  });
+
+  if (locationError) {
+    await supabase.from("users").delete().eq("id", inserted.id);
+    return Response.json({ ok: false, error: locationError.message }, { status: 500 });
+  }
+
   await createSession(inserted.id);
 
   return Response.json({ ok: true, user: inserted });
 }
-

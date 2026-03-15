@@ -9,6 +9,7 @@ import {
   Popup,
   TileLayer,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
 import { divIcon } from "leaflet";
 
@@ -29,15 +30,32 @@ type User = {
   purpose: "friends" | "hangout" | "hookup" | "social";
 };
 
-function FollowLocation({ position }: { position: Position | null }) {
+function FollowLocation({
+  position,
+  follow,
+  onUserMove,
+}: {
+  position: Position | null;
+  follow: boolean;
+  onUserMove: () => void;
+}) {
   const map = useMap();
 
+  useMapEvents({
+    dragstart(e) {
+      if ("originalEvent" in e && e.originalEvent) onUserMove();
+    },
+    zoomstart(e) {
+      if ("originalEvent" in e && e.originalEvent) onUserMove();
+    },
+  });
+
   useEffect(() => {
-    if (!position) return;
+    if (!position || !follow) return;
     map.setView([position.lat, position.lng], Math.max(map.getZoom(), 16), {
       animate: true,
     });
-  }, [map, position]);
+  }, [follow, map, position]);
 
   return null;
 }
@@ -58,6 +76,7 @@ export function Map() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
+  const [followUser, setFollowUser] = useState(true);
 
   useEffect(() => {
     if (!window.isSecureContext) {
@@ -219,12 +238,23 @@ export function Map() {
       const endpoint =
         authMode === "register" ? "/api/auth/register" : "/api/auth/login";
 
+      if (authMode === "register" && !position) {
+        throw new Error("Location is required to register.");
+      }
+
       const payload =
         authMode === "register"
           ? {
               username: authUsername.trim(),
               password: authPassword,
               purpose: authPurpose,
+              location: position
+                ? {
+                    lat: position.lat,
+                    lng: position.lng,
+                    accuracy: position.accuracy,
+                  }
+                : undefined,
             }
           : { username: authUsername.trim(), password: authPassword };
 
@@ -266,7 +296,11 @@ export function Map() {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        <FollowLocation position={position} />
+        <FollowLocation
+          position={position}
+          follow={followUser}
+          onUserMove={() => setFollowUser(false)}
+        />
 
         {position && (
           <>
@@ -349,8 +383,31 @@ export function Map() {
           bottom: 12,
           left: 12,
           zIndex: 2000,
+          display: "flex",
+          gap: 8,
+          alignItems: "flex-start",
         }}
       >
+        <button
+          type="button"
+          onClick={() => setFollowUser(true)}
+          disabled={!position}
+          style={{
+            background: "rgba(255,255,255,0.95)",
+            color: "#111827",
+            border: "1px solid rgba(0,0,0,0.10)",
+            borderRadius: 9999,
+            padding: "10px 12px",
+            fontSize: 14,
+            opacity: !position ? 0.6 : 1,
+            cursor: !position ? "not-allowed" : "pointer",
+            touchAction: "manipulation",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {followUser ? "Following" : "Center me"}
+        </button>
+
         <button
           type="button"
           onClick={saveCurrentLocation}
@@ -365,6 +422,7 @@ export function Map() {
             opacity: !position || isSaving || !user ? 0.6 : 1,
             cursor: !position || isSaving || !user ? "not-allowed" : "pointer",
             touchAction: "manipulation",
+            whiteSpace: "nowrap",
           }}
         >
           {isSaving ? "Saving…" : "Save location"}
