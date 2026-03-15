@@ -75,8 +75,6 @@ export function Map() {
   const [position, setPosition] = useState<Position | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
@@ -166,51 +164,6 @@ export function Map() {
       cancelled = true;
     };
   }, [hasCheckedAuth, position]);
-
-  async function saveCurrentLocation() {
-    if (!position) return;
-    if (!user) {
-      setAuthOpen(true);
-      return;
-    }
-
-    setIsSaving(true);
-    setSaveMessage(null);
-
-    try {
-      const res = await fetch("/api/locations", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          lat: position.lat,
-          lng: position.lng,
-          accuracy: position.accuracy,
-        }),
-      });
-
-      if (!res.ok) {
-        if (res.status === 401) {
-          setAuthOpen(true);
-          throw new Error("Please log in.");
-        }
-        const data = (await res.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        throw new Error(data?.error || `Save failed (${res.status})`);
-      }
-
-      setSaveMessage("Saved");
-      setSavedLocations((prev) => [
-        { lat: position.lat, lng: position.lng, username: user.username },
-        ...prev,
-      ]);
-      setTimeout(() => setSaveMessage(null), 2500);
-    } catch (e) {
-      setSaveMessage(e instanceof Error ? e.message : "Save failed.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
 
   useEffect(() => {
     if (!user) return;
@@ -456,41 +409,6 @@ export function Map() {
         >
           {followUser ? "Following" : "Center me"}
         </button>
-
-        <button
-          type="button"
-          onClick={saveCurrentLocation}
-          disabled={!position || isSaving || !user}
-          style={{
-            background: "#111827",
-            color: "white",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 9999,
-            padding: "10px 12px",
-            fontSize: 14,
-            opacity: !position || isSaving || !user ? 0.6 : 1,
-            cursor: !position || isSaving || !user ? "not-allowed" : "pointer",
-            touchAction: "manipulation",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {isSaving ? "Saving…" : "Save location"}
-        </button>
-        {saveMessage && (
-          <div style={{ marginTop: 8, fontSize: 13, color: "#111827" }}>
-            <span
-              style={{
-                display: "inline-block",
-                background: "rgba(255,255,255,0.9)",
-                border: "1px solid rgba(0,0,0,0.08)",
-                borderRadius: 10,
-                padding: "6px 10px",
-              }}
-            >
-              {saveMessage}
-            </span>
-          </div>
-        )}
       </div>
 
       {authOpen && (
