@@ -9,7 +9,6 @@ import {
   Popup,
   TileLayer,
   useMap,
-  useMapEvents,
 } from "react-leaflet";
 import { divIcon, latLngBounds, type Map as LeafletMap } from "leaflet";
 
@@ -23,6 +22,7 @@ type SavedLocation = {
   lat: number;
   lng: number;
   username?: string | null;
+  purpose?: User["purpose"] | null;
 };
 
 type User = {
@@ -30,35 +30,55 @@ type User = {
   purpose: "friends" | "hangout" | "hookup" | "social";
 };
 
-function FollowLocation({
-  position,
-  follow,
-  onUserMove,
-}: {
-  position: Position | null;
-  follow: boolean;
-  onUserMove: () => void;
-}) {
-  const map = useMap();
+const PURPOSES: User["purpose"][] = ["friends", "hangout", "hookup", "social"];
 
-  useMapEvents({
-    dragstart(e) {
-      if ("originalEvent" in e && e.originalEvent) onUserMove();
-    },
-    zoomstart(e) {
-      if ("originalEvent" in e && e.originalEvent) onUserMove();
-    },
-  });
+const PURPOSE_COLORS: Record<
+  User["purpose"],
+  {
+    dot: string;
+    dotBorder: string;
+    badgeBg: string;
+    badgeBorder: string;
+    badgeText: string;
+  }
+> = {
+  friends: {
+    dot: "#22c55e",
+    dotBorder: "#15803d",
+    badgeBg: "rgba(34,197,94,0.12)",
+    badgeBorder: "rgba(21,128,61,0.25)",
+    badgeText: "#166534",
+  },
+  hangout: {
+    dot: "#3b82f6",
+    dotBorder: "#1d4ed8",
+    badgeBg: "rgba(59,130,246,0.12)",
+    badgeBorder: "rgba(29,78,216,0.25)",
+    badgeText: "#1e40af",
+  },
+  hookup: {
+    dot: "#f43f5e",
+    dotBorder: "#be123c",
+    badgeBg: "rgba(244,63,94,0.12)",
+    badgeBorder: "rgba(190,18,60,0.25)",
+    badgeText: "#9f1239",
+  },
+  social: {
+    dot: "#a855f7",
+    dotBorder: "#7e22ce",
+    badgeBg: "rgba(168,85,247,0.12)",
+    badgeBorder: "rgba(126,34,206,0.25)",
+    badgeText: "#6b21a8",
+  },
+};
 
-  useEffect(() => {
-    if (!position || !follow) return;
-    map.setView([position.lat, position.lng], Math.max(map.getZoom(), 16), {
-      animate: true,
-    });
-  }, [follow, map, position]);
-
-  return null;
-}
+const DEFAULT_COLORS = {
+  dot: "#ef4444",
+  dotBorder: "#b91c1c",
+  badgeBg: "rgba(107,114,128,0.12)",
+  badgeBorder: "rgba(107,114,128,0.25)",
+  badgeText: "#6b7280",
+};
 
 function MapRefSetter({ onMap }: { onMap: (map: LeafletMap) => void }) {
   const map = useMap();
@@ -76,6 +96,7 @@ export function Map() {
   const [error, setError] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(true);
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
+  const [purposeFilter, setPurposeFilter] = useState<User["purpose"] | "all">("all");
   const [user, setUser] = useState<User | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"register" | "login">("register");
@@ -85,7 +106,6 @@ export function Map() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
-  const [followUser, setFollowUser] = useState(false);
   const [hasAutoFitted, setHasAutoFitted] = useState(false);
 
   useEffect(() => {
@@ -195,11 +215,16 @@ export function Map() {
     };
   }, [user]);
 
+  const filteredLocations = useMemo(() => {
+    if (purposeFilter === "all") return savedLocations;
+    return savedLocations.filter((l) => l.purpose === purposeFilter);
+  }, [purposeFilter, savedLocations]);
+
   useEffect(() => {
-    if (!map || hasAutoFitted || savedLocations.length === 0) return;
-    fitAllPeople();
+    if (!map || hasAutoFitted || filteredLocations.length === 0) return;
+    fitVisiblePeople();
     setHasAutoFitted(true);
-  }, [hasAutoFitted, map, savedLocations.length]);
+  }, [filteredLocations.length, hasAutoFitted, map]);
 
   async function submitAuth() {
     setIsAuthSubmitting(true);
@@ -254,10 +279,10 @@ export function Map() {
     }
   }
 
-  function fitAllPeople() {
-    if (!map || savedLocations.length === 0) return;
+  function fitVisiblePeople() {
+    if (!map || filteredLocations.length === 0) return;
 
-    const points = savedLocations.map((l) => [l.lat, l.lng] as [number, number]);
+    const points = filteredLocations.map((l) => [l.lat, l.lng] as [number, number]);
     const bounds = latLngBounds(points);
     map.fitBounds(bounds, { padding: [40, 40] });
   }
@@ -276,12 +301,6 @@ export function Map() {
         />
 
         <MapRefSetter onMap={setMap} />
-
-        <FollowLocation
-          position={position}
-          follow={followUser}
-          onUserMove={() => setFollowUser(false)}
-        />
 
         {position && (
           <>
@@ -306,7 +325,7 @@ export function Map() {
           </>
         )}
 
-        {savedLocations.map((loc, idx) => (
+        {filteredLocations.map((loc, idx) => (
           <Marker
             key={`${loc.lat},${loc.lng},${idx}`}
             position={[loc.lat, loc.lng]}
@@ -317,15 +336,50 @@ export function Map() {
                   <div style="font-size:12px; line-height:1; padding:3px 6px; border-radius:10px; background:rgba(255,255,255,0.95); border:1px solid rgba(0,0,0,0.10); color:#111827; white-space:nowrap;">
                     ${escapeHtml(loc.username?.trim() ? loc.username : "a")}
                   </div>
-                  <div style="width:12px; height:12px; margin-top:4px; border-radius:9999px; background:#ef4444; border:2px solid #b91c1c;"></div>
+                  ${
+                    loc.purpose
+                      ? `<div style="font-size:11px; line-height:1; margin-top:3px; padding:2px 6px; border-radius:9999px; background:${
+                          (PURPOSE_COLORS[loc.purpose] ?? DEFAULT_COLORS).badgeBg
+                        }; border:1px solid ${
+                          (PURPOSE_COLORS[loc.purpose] ?? DEFAULT_COLORS).badgeBorder
+                        }; color:${
+                          (PURPOSE_COLORS[loc.purpose] ?? DEFAULT_COLORS).badgeText
+                        }; white-space:nowrap;">${escapeHtml(loc.purpose)}</div>`
+                      : ""
+                  }
+                  <div style="width:12px; height:12px; margin-top:4px; border-radius:9999px; background:${
+                    (loc.purpose ? PURPOSE_COLORS[loc.purpose] : DEFAULT_COLORS).dot
+                  }; border:2px solid ${
+                    (loc.purpose ? PURPOSE_COLORS[loc.purpose] : DEFAULT_COLORS).dotBorder
+                  };"></div>
                 </div>
               `,
-              iconSize: [120, 36],
-              iconAnchor: [60, 30],
+              iconSize: [140, 56],
+              iconAnchor: [70, 48],
             })}
           >
             <Popup>
               {loc.username?.trim() ? loc.username : "a"}
+              {loc.purpose ? (
+                <>
+                  <br />
+                  <span
+                    style={{
+                      display: "inline-block",
+                      marginTop: 6,
+                      padding: "2px 8px",
+                      borderRadius: 9999,
+                      border: `1px solid ${PURPOSE_COLORS[loc.purpose].badgeBorder}`,
+                      background: PURPOSE_COLORS[loc.purpose].badgeBg,
+                      color: PURPOSE_COLORS[loc.purpose].badgeText,
+                      fontSize: 12,
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {loc.purpose}
+                  </span>
+                </>
+              ) : null}
             </Popup>
           </Marker>
         ))}
@@ -359,20 +413,13 @@ export function Map() {
       )}
 
       <div
-        style={{
-          position: "fixed",
-          bottom: 12,
-          left: 12,
-          zIndex: 2000,
-          display: "flex",
-          gap: 8,
-          alignItems: "flex-start",
-        }}
+        className="mapControls"
       >
         <button
+          className="control"
           type="button"
-          onClick={fitAllPeople}
-          disabled={savedLocations.length === 0 || !map}
+          onClick={fitVisiblePeople}
+          disabled={filteredLocations.length === 0 || !map}
           style={{
             background: "rgba(255,255,255,0.95)",
             color: "#111827",
@@ -380,20 +427,28 @@ export function Map() {
             borderRadius: 9999,
             padding: "10px 12px",
             fontSize: 14,
-            opacity: savedLocations.length === 0 || !map ? 0.6 : 1,
-            cursor: savedLocations.length === 0 || !map ? "not-allowed" : "pointer",
+            opacity: filteredLocations.length === 0 || !map ? 0.6 : 1,
+            cursor: filteredLocations.length === 0 || !map ? "not-allowed" : "pointer",
             touchAction: "manipulation",
             whiteSpace: "nowrap",
           }}
-          title="Zoom to all saved people"
+          title={
+            purposeFilter === "all"
+              ? "Zoom to all people"
+              : `Zoom to people matching: ${purposeFilter}`
+          }
         >
-          People ({savedLocations.length})
+          People (
+          {purposeFilter === "all"
+            ? filteredLocations.length
+            : `${filteredLocations.length}/${savedLocations.length}`}
+          )
         </button>
 
-        <button
-          type="button"
-          onClick={() => setFollowUser(true)}
-          disabled={!position}
+        <select
+          className="control controlSelect"
+          value={purposeFilter}
+          onChange={(e) => setPurposeFilter(e.target.value as User["purpose"] | "all")}
           style={{
             background: "rgba(255,255,255,0.95)",
             color: "#111827",
@@ -401,15 +456,66 @@ export function Map() {
             borderRadius: 9999,
             padding: "10px 12px",
             fontSize: 14,
-            opacity: !position ? 0.6 : 1,
-            cursor: !position ? "not-allowed" : "pointer",
-            touchAction: "manipulation",
-            whiteSpace: "nowrap",
+            height: 40,
           }}
+          title="Filter people by purpose"
         >
-          {followUser ? "Following" : "Center me"}
-        </button>
+          <option value="all">All purposes</option>
+          {PURPOSES.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+
       </div>
+
+      <style jsx>{`
+        .mapControls {
+          position: fixed;
+          top: 64px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 2000;
+          display: flex;
+          gap: 8px;
+          align-items: flex-start;
+          flex-wrap: wrap;
+          justify-content: center;
+          max-width: calc(100vw - 24px);
+        }
+
+        @media (max-width: 520px) {
+          .mapControls {
+            top: 12px;
+            left: 12px;
+            right: 12px;
+            transform: none;
+            display: flex;
+            flex-wrap: nowrap;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 8px;
+            padding: 6px;
+            border-radius: 9999px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            background: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(10px);
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+
+          .control {
+            flex: 0 0 auto;
+            white-space: nowrap;
+          }
+
+          .controlSelect {
+            flex: 1 1 auto;
+            min-width: 140px;
+          }
+        }
+      `}</style>
 
       {authOpen && (
         <div
@@ -519,10 +625,11 @@ export function Map() {
                     background: "white",
                   }}
                 >
-                  <option value="friends">friends</option>
-                  <option value="hangout">hangout</option>
-                  <option value="hookup">hookup</option>
-                  <option value="social">social</option>
+                  {PURPOSES.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
                 </select>
               </>
             )}

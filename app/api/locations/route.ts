@@ -46,18 +46,23 @@ export async function GET() {
     new Set(locations.map((l) => l.user_id).filter((id): id is string => !!id)),
   );
 
-  let usernamesById = new Map<string, string>();
+  let usersById = new Map<string, { username: string; purpose: string }>();
   if (userIds.length) {
     const { data: users, error: usersError } = await supabase
       .from("users")
-      .select("id,username")
+      .select("id,username,purpose")
       .in("id", userIds);
 
     if (usersError) {
       return Response.json({ ok: false, error: usersError.message }, { status: 500 });
     }
 
-    usernamesById = new Map((users ?? []).map((u) => [u.id as string, u.username as string]));
+    usersById = new Map(
+      (users ?? []).map((u) => [
+        u.id as string,
+        { username: u.username as string, purpose: u.purpose as string },
+      ]),
+    );
   }
 
   return Response.json({
@@ -65,7 +70,8 @@ export async function GET() {
     locations: locations.map((l) => ({
       lat: l.lat,
       lng: l.lng,
-      username: l.user_id ? usernamesById.get(l.user_id) ?? null : null,
+      username: l.user_id ? usersById.get(l.user_id)?.username ?? null : null,
+      purpose: l.user_id ? usersById.get(l.user_id)?.purpose ?? null : null,
     })),
   });
 }

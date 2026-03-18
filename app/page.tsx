@@ -1,5 +1,5 @@
-import { MapClient } from "./MapClient";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <MapClient />;
+  redirect("/explore");
 }
