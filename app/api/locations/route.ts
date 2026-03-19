@@ -7,7 +7,7 @@ type LocationPayload = {
   accuracy?: number;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     return Response.json(
@@ -16,7 +16,7 @@ export async function GET() {
     );
   }
 
-  const user = await getSessionUser();
+  const user = await getSessionUser(request);
   if (!user) {
     return Response.json({ ok: false, error: "Unauthorized." }, { status: 401 });
   }
@@ -113,7 +113,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const user = await getSessionUser();
+  const user = await getSessionUser(request);
   if (!user) {
     return Response.json({ ok: false, error: "Unauthorized." }, { status: 401 });
   }

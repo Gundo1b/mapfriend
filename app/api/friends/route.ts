@@ -1,8 +1,8 @@
 import { getSessionUser } from "../../lib/auth";
 import { getSupabaseAdmin } from "../../lib/supabaseAdmin";
 
-export async function GET() {
-  const me = await getSessionUser();
+export async function GET(request: Request) {
+  const me = await getSessionUser(request);
   if (!me) {
     return Response.json({ ok: false, error: "Unauthorized." }, { status: 401 });
   }
@@ -62,4 +62,3 @@ export async function GET() {
       .filter((f) => !!f.username),
   });
 }
-

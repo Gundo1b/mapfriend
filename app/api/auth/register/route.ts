@@ -107,7 +107,7 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: locationError.message }, { status: 500 });
   }
 
-  await createSession(inserted.id);
+  const token = await createSession(inserted.id);
 
-  return Response.json({ ok: true, user: inserted });
+  return Response.json({ ok: true, token, user: inserted });
 }

@@ -61,6 +61,8 @@ export async function createSession(userId: string) {
     path: "/",
     maxAge: SESSION_DAYS * 24 * 60 * 60,
   });
+
+  return token;
 }
 
 export async function clearSessionCookie() {
@@ -73,12 +75,16 @@ export async function clearSessionCookie() {
   });
 }
 
-export async function getSessionUser(): Promise<User | null> {
+function parseBearerToken(value: string | null) {
+  if (!value) return null;
+  const m = value.match(/^Bearer\s+(.+)$/i);
+  const token = m?.[1]?.trim();
+  return token ? token : null;
+}
+
+async function getUserForSessionToken(token: string): Promise<User | null> {
   const supabase = getSupabaseAdmin();
   if (!supabase) return null;
-
-  const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!token) return null;
 
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
@@ -104,3 +110,14 @@ export async function getSessionUser(): Promise<User | null> {
   } as User;
 }
 
+export async function getSessionUser(request?: Request): Promise<User | null> {
+  const headerToken = request ? parseBearerToken(request.headers.get("authorization")) : null;
+  if (headerToken) {
+    return getUserForSessionToken(headerToken);
+  }
+
+  const cookieToken = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!cookieToken) return null;
+
+  return getUserForSessionToken(cookieToken);
+}

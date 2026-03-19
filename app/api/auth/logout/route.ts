@@ -2,11 +2,13 @@ import { clearSessionCookie, getSessionUser } from "../../../lib/auth";
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { cookies } from "next/headers";
 
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = getSupabaseAdmin();
-  const token = (await cookies()).get("mf_session")?.value;
+  const authHeader = request.headers.get("authorization");
+  const bearer = authHeader?.match(/^Bearer\\s+(.+)$/i)?.[1]?.trim() ?? null;
+  const token = bearer || (await cookies()).get("mf_session")?.value;
 
-  const user = await getSessionUser();
+  const user = await getSessionUser(request);
 
   if (supabase && token && user) {
     await supabase.from("sessions").delete().eq("token", token);
@@ -15,4 +17,3 @@ export async function POST() {
   await clearSessionCookie();
   return Response.json({ ok: true });
 }
-

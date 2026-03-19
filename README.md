@@ -41,6 +41,13 @@ APIs (optional):
 - `GET /api/messages?with=username` lists messages with a friend, `POST /api/messages` sends a message.
 - `GET /api/messages/inbox?since=...` returns incoming messages since a timestamp (used for notifications).
 
+## Mobile (Expo)
+
+An Expo mobile app lives in `mobile/`.
+
+- Copy `mobile/.env.example` to `mobile/.env` and set `EXPO_PUBLIC_API_BASE_URL` (use your PC LAN IP for real devices).
+- Run `cd mobile` then `npm run start`.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

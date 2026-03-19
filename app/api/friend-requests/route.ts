@@ -10,8 +10,8 @@ type RespondPayload = {
   action?: "accept" | "decline";
 };
 
-export async function GET() {
-  const me = await getSessionUser();
+export async function GET(request: Request) {
+  const me = await getSessionUser(request);
   if (!me) {
     return Response.json({ ok: false, error: "Unauthorized." }, { status: 401 });
   }
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const fromUser = await getSessionUser();
+  const fromUser = await getSessionUser(request);
   if (!fromUser) {
     return Response.json({ ok: false, error: "Unauthorized." }, { status: 401 });
   }
@@ -153,7 +153,7 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const me = await getSessionUser();
+  const me = await getSessionUser(request);
   if (!me) {
     return Response.json({ ok: false, error: "Unauthorized." }, { status: 401 });
   }

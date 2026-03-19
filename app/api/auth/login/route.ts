@@ -45,11 +45,11 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: "Invalid credentials." }, { status: 401 });
   }
 
-  await createSession(user.id);
+  const token = await createSession(user.id);
 
   return Response.json({
     ok: true,
+    token,
     user: { id: user.id, username: user.username, purpose: user.purpose },
   });
 }
-
