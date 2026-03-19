@@ -21,6 +21,7 @@ type Message = {
 };
 
 export default function ChatPage() {
+  const [isMounted, setIsMounted] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,26 +33,78 @@ export default function ChatPage() {
   const [isSending, setIsSending] = useState(false);
   const [unreadByUsername, setUnreadByUsername] = useState<Record<string, number>>({});
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationSupported, setNotificationSupported] = useState(false);
+  const [notificationPermission, setNotificationPermission] =
+    useState<NotificationPermission>("default");
+  const [notificationSecureContext, setNotificationSecureContext] = useState(true);
 
   const knownMessageIdsRef = useRef<Set<string>>(new Set());
   const lastInboxSinceRef = useRef<string>(new Date(Date.now() - 60_000).toISOString());
   const lastConversationSinceRef = useRef<string | null>(null);
+  const messagesPaneRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef(true);
 
   const friendsSorted = useMemo(() => {
     return [...friends].sort((a, b) => a.username.localeCompare(b.username));
   }, [friends]);
 
-  const notificationSupported = typeof window !== "undefined" && "Notification" in window;
-  const notificationPermission =
-    typeof window !== "undefined" && "Notification" in window ? Notification.permission : "default";
-  const notificationSecureContext = typeof window !== "undefined" ? window.isSecureContext : true;
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem("mf_notifications_enabled");
     setNotificationsEnabled(stored === "true");
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setNotificationSecureContext(window.isSecureContext);
+    const supported = "Notification" in window;
+    setNotificationSupported(supported);
+    if (supported) setNotificationPermission(Notification.permission);
+  }, []);
+
+  useEffect(() => {
+    // Mobile keyboard-friendly height: use VisualViewport when available.
+    if (typeof window === "undefined") return;
+
+    const root = document.documentElement;
+
+    function setAppHeight(px: number) {
+      root.style.setProperty("--appHeight", `${Math.max(0, Math.round(px))}px`);
+    }
+
+    function update() {
+      const vv = window.visualViewport;
+      setAppHeight(vv?.height ?? window.innerHeight);
+    }
+
+    update();
+
+    window.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
+
+    return () => {
+      window.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
+    };
+  }, []);
+
+  function scrollToBottom(behavior: ScrollBehavior) {
+    messagesEndRef.current?.scrollIntoView({ block: "end", behavior });
+  }
+
+  function handleMessagesScroll() {
+    const el = messagesPaneRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom < 80;
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -112,6 +165,7 @@ export default function ChatPage() {
     lastConversationSinceRef.current = null;
     setMessages([]);
     setMessageError(null);
+    shouldAutoScrollRef.current = true;
 
     async function loadConversation() {
       try {
@@ -135,6 +189,7 @@ export default function ChatPage() {
         const last = (data.messages ?? []).at(-1)?.createdAt ?? null;
         lastConversationSinceRef.current = last;
         setUnreadByUsername((prev) => ({ ...prev, [friend.username]: 0 }));
+        scrollToBottom("auto");
       } catch (e) {
         if (!cancelled) setMessageError(e instanceof Error ? e.message : "Failed.");
       }
@@ -163,6 +218,7 @@ export default function ChatPage() {
         setMessages((prev) => [...prev, ...next]);
         for (const m of next) knownMessageIdsRef.current.add(m.id);
         lastConversationSinceRef.current = next.at(-1)?.createdAt ?? lastConversationSinceRef.current;
+        if (shouldAutoScrollRef.current) scrollToBottom("smooth");
       } catch {
         // ignore polling errors
       }
@@ -175,8 +231,7 @@ export default function ChatPage() {
   }, [selected]);
 
   useEffect(() => {
-    // Keep the latest message visible when chatting (WhatsApp-like behavior).
-    messagesEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+    if (shouldAutoScrollRef.current) scrollToBottom("smooth");
   }, [messages.length, selected?.username]);
 
   useEffect(() => {
@@ -289,6 +344,8 @@ export default function ChatPage() {
         knownMessageIdsRef.current.add(data.message.id);
         setMessages((prev) => [...prev, data.message as Message]);
         lastConversationSinceRef.current = data.message.createdAt;
+        shouldAutoScrollRef.current = true;
+        scrollToBottom("smooth");
       }
 
       setMessageDraft("");
@@ -323,7 +380,7 @@ export default function ChatPage() {
           <div className="topBarTitle">Chats</div>
         </div>
         <div className="topBarRight">
-          {notificationSupported ? (
+          {isMounted && notificationSupported ? (
             notificationPermission !== "granted" ? (
               <button type="button" className="pillBtn" onClick={enableNotifications}>
                 Enable notifications
@@ -332,17 +389,16 @@ export default function ChatPage() {
               <button type="button" className="pillBtn pillBtnOn" onClick={disableNotifications}>
                 Notifications on
               </button>
-            ) : (
-              <button
-                type="button"
-                className="pillBtn"
-                onClick={() => {
-                  if (typeof window === "undefined") return;
-                  window.localStorage.setItem("mf_notifications_enabled", "true");
-                  setNotificationsEnabled(true);
-                }}
-              >
-                Notifications off
+              ) : (
+                <button
+                  type="button"
+                  className="pillBtn"
+                  onClick={() => {
+                    window.localStorage.setItem("mf_notifications_enabled", "true");
+                    setNotificationsEnabled(true);
+                  }}
+                >
+                  Notifications off
               </button>
             )
           ) : null}
@@ -351,19 +407,19 @@ export default function ChatPage() {
 
       <div className={`chatGrid ${selected ? "hasSelected" : ""}`}>
         <section className="friendsPane">
-          {notificationSupported && !notificationSecureContext ? (
+          {isMounted && notificationSupported && !notificationSecureContext ? (
             <div className="notice noticeWarn">Notifications need HTTPS (secure origin).</div>
           ) : null}
-          {notificationSupported && notificationPermission === "denied" ? (
+          {isMounted && notificationSupported && notificationPermission === "denied" ? (
             <div className="notice noticeError">
               Notifications are blocked in your browser settings for this site.
             </div>
           ) : null}
-          {notificationSupported && notificationPermission === "granted" ? (
+          {isMounted && notificationSupported && notificationPermission === "granted" ? (
             <div style={{ padding: "0 6px 10px" }}>
-              {/* <button type="button" className="pillBtn" onClick={testNotification}>
+              <button type="button" className="pillBtn" onClick={testNotification}>
                 Test notification
-              </button> */}
+              </button>
             </div>
           ) : null}
 
@@ -437,7 +493,11 @@ export default function ChatPage() {
 
             {messageError ? <div className="notice noticeError">{messageError}</div> : null}
 
-            <div className="messagesPane">
+            <div
+              className="messagesPane"
+              ref={messagesPaneRef}
+              onScroll={handleMessagesScroll}
+            >
               {me && messages.length === 0 ? <div className="muted">Say hi!</div> : null}
               <div className="messageList">
                 {messages.map((m) => {
@@ -460,6 +520,10 @@ export default function ChatPage() {
                 className="composerInput"
                 value={messageDraft}
                 onChange={(e) => setMessageDraft(e.target.value)}
+                onFocus={() => {
+                  shouldAutoScrollRef.current = true;
+                  window.setTimeout(() => scrollToBottom("auto"), 50);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -484,8 +548,11 @@ export default function ChatPage() {
 
       <style jsx>{`
         .chatRoot {
-          min-height: 100vh;
+          height: var(--appHeight, 100dvh);
           padding: 12px 12px 96px;
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
           background: #0b141a;
           color: #e9edef;
         }
@@ -553,6 +620,8 @@ export default function ChatPage() {
           display: grid;
           grid-template-columns: 1fr;
           gap: 12px;
+          flex: 1 1 auto;
+          min-height: 0;
         }
 
         .friendsPane {
@@ -701,7 +770,7 @@ export default function ChatPage() {
           overflow: hidden;
           display: flex;
           flex-direction: column;
-          min-height: 520px;
+          min-height: 0;
         }
 
         .convHeader {
@@ -745,6 +814,8 @@ export default function ChatPage() {
           flex: 1;
           padding: 12px;
           overflow: auto;
+          min-height: 0;
+          scroll-padding-bottom: 140px;
           background: radial-gradient(circle at 20% 20%, rgba(0, 168, 132, 0.10), transparent 45%),
             radial-gradient(circle at 80% 10%, rgba(255, 255, 255, 0.06), transparent 40%),
             #0b141a;
@@ -754,6 +825,7 @@ export default function ChatPage() {
           display: flex;
           flex-direction: column;
           gap: 8px;
+          padding-bottom: 6px;
         }
 
         .msgRow {
@@ -804,7 +876,7 @@ export default function ChatPage() {
           display: grid;
           grid-template-columns: 1fr auto;
           gap: 8px;
-          padding: 10px 12px;
+          padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
           border-top: 1px solid rgba(255, 255, 255, 0.06);
           background: rgba(17, 27, 33, 0.96);
         }
