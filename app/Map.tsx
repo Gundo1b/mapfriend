@@ -30,6 +30,11 @@ type User = {
   purpose: "friends" | "hangout" | "hookup" | "social";
 };
 
+type FriendRequestEntry = {
+  status: "sending" | "sent" | "error";
+  error?: string;
+};
+
 const PURPOSES: User["purpose"][] = ["friends", "hangout", "hookup", "social"];
 
 const PURPOSE_COLORS: Record<
@@ -98,6 +103,9 @@ export function Map() {
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
   const [purposeFilter, setPurposeFilter] = useState<User["purpose"] | "all">("all");
   const [user, setUser] = useState<User | null>(null);
+  const [friendRequests, setFriendRequests] = useState<Record<string, FriendRequestEntry>>(
+    {},
+  );
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"register" | "login">("register");
   const [authUsername, setAuthUsername] = useState("");
@@ -279,6 +287,51 @@ export function Map() {
     }
   }
 
+  async function sendFriendRequest(toUsername: string) {
+    const username = toUsername.trim();
+    if (!username) return;
+    if (!user) {
+      setAuthOpen(true);
+      return;
+    }
+    if (user.username === username) return;
+
+    setFriendRequests((prev) => ({ ...prev, [username]: { status: "sending" } }));
+
+    try {
+      const res = await fetch("/api/friend-requests", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ toUsername: username }),
+      });
+
+      if (res.status === 401) {
+        setAuthOpen(true);
+        setFriendRequests((prev) => ({
+          ...prev,
+          [username]: { status: "error", error: "Please login first." },
+        }));
+        return;
+      }
+
+      const data = (await res.json().catch(() => null)) as
+        | { ok: true; created: boolean }
+        | { ok: false; error: string }
+        | null;
+
+      if (!res.ok || !data || !("ok" in data) || !data.ok) {
+        throw new Error((data as { error?: string } | null)?.error || "Failed.");
+      }
+
+      setFriendRequests((prev) => ({ ...prev, [username]: { status: "sent" } }));
+    } catch (e) {
+      setFriendRequests((prev) => ({
+        ...prev,
+        [username]: { status: "error", error: e instanceof Error ? e.message : "Failed." },
+      }));
+    }
+  }
+
   function fitVisiblePeople() {
     if (!map || filteredLocations.length === 0) return;
 
@@ -380,6 +433,50 @@ export function Map() {
                   </span>
                 </>
               ) : null}
+              {loc.username?.trim() && (!user || loc.username.trim() !== user.username) ? (
+                <div style={{ marginTop: 10, minWidth: 160 }}>
+                  <button
+                    type="button"
+                    onClick={() => sendFriendRequest(loc.username as string)}
+                    disabled={
+                      friendRequests[loc.username.trim()]?.status === "sending" ||
+                      friendRequests[loc.username.trim()]?.status === "sent"
+                    }
+                    style={{
+                      width: "100%",
+                      background: "#111827",
+                      color: "white",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 10,
+                      padding: "8px 10px",
+                      fontSize: 13,
+                      opacity:
+                        friendRequests[loc.username.trim()]?.status === "sending" ||
+                        friendRequests[loc.username.trim()]?.status === "sent"
+                          ? 0.7
+                          : 1,
+                      cursor:
+                        friendRequests[loc.username.trim()]?.status === "sending" ||
+                        friendRequests[loc.username.trim()]?.status === "sent"
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
+                  >
+                    {friendRequests[loc.username.trim()]?.status === "sending"
+                      ? "Sending..."
+                      : friendRequests[loc.username.trim()]?.status === "sent"
+                        ? "Request sent"
+                        : user
+                          ? "Send friend request"
+                          : "Login to add friend"}
+                  </button>
+                  {friendRequests[loc.username.trim()]?.status === "error" && (
+                    <div style={{ marginTop: 6, color: "#b91c1c", fontSize: 12 }}>
+                      {friendRequests[loc.username.trim()]?.error || "Failed."}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </Popup>
           </Marker>
         ))}
@@ -415,6 +512,30 @@ export function Map() {
       <div
         className="mapControls"
       >
+        <div
+          className="control"
+          aria-hidden="true"
+          style={{
+            background: "rgba(255,255,255,0.95)",
+            color: "#111827",
+            border: "1px solid rgba(0,0,0,0.10)",
+            borderRadius: 9999,
+            padding: 6,
+            height: 40,
+            width: 40,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flex: "0 0 auto",
+          }}
+          title="MapFriend"
+        >
+          <img
+            src="/logo.png"
+            alt=""
+            style={{ width: 26, height: 26, objectFit: "contain" }}
+          />
+        </div>
         <button
           className="control"
           type="button"
@@ -540,6 +661,19 @@ export function Map() {
               border: "1px solid rgba(0,0,0,0.08)",
             }}
           >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginBottom: 10,
+              }}
+            >
+              <img
+                src="/logo.png"
+                alt="MapFriend"
+                style={{ width: 44, height: 44, objectFit: "contain" }}
+              />
+            </div>
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
               <button
                 type="button"

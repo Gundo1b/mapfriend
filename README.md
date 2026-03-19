@@ -25,11 +25,21 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 This app saves locations via `POST /api/locations`.
 
 - Locations are stored in Supabase table `public.locations`.
+- Friend requests (optional) are stored in Supabase table `public.friend_requests`.
 
 Setup:
 
 1. Copy `.env.example` to `.env.local` and fill in your keys.
 2. Run the SQL in `supabase/locations.sql` in your Supabase SQL editor.
+3. (Optional) Run the SQL in `supabase/friend_requests.sql` to enable `POST /api/friend-requests`.
+4. (Optional) Run the SQL in `supabase/messages.sql` to enable chat messaging (`/api/messages`).
+
+APIs (optional):
+
+- `GET /api/friend-requests` lists incoming pending requests, `PATCH /api/friend-requests` accepts/declines.
+- `GET /api/friends` lists accepted friends (shown in the Chat tab).
+- `GET /api/messages?with=username` lists messages with a friend, `POST /api/messages` sends a message.
+- `GET /api/messages/inbox?since=...` returns incoming messages since a timestamp (used for notifications).
 
 ## Learn More
 

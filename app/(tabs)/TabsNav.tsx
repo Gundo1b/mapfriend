@@ -39,6 +39,29 @@ export function TabsNav() {
         margin: "0 auto",
       }}
     >
+      <Link
+        href="/explore"
+        aria-label="Home"
+        style={{
+          width: 44,
+          height: 44,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 9999,
+          border: "1px solid rgba(0,0,0,0.10)",
+          background: "rgba(255,255,255,0.95)",
+          textDecoration: "none",
+          flex: "0 0 auto",
+        }}
+      >
+        <img
+          src="/logo.png"
+          alt=""
+          aria-hidden="true"
+          style={{ width: 26, height: 26, objectFit: "contain" }}
+        />
+      </Link>
       {TABS.map((t) => {
         const active = pathname ? isActivePath(pathname, t.href) : false;
         return (
@@ -69,4 +92,3 @@ export function TabsNav() {
     </nav>
   );
 }
-
