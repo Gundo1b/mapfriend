@@ -1,4 +1,5 @@
 import { TabsNav } from "./TabsNav";
+import { InboxNotifier } from "./InboxNotifier";
 
 export default function TabsLayout({
   children,
@@ -8,8 +9,8 @@ export default function TabsLayout({
   return (
     <>
       {children}
+      <InboxNotifier />
       <TabsNav />
     </>
   );
 }
-

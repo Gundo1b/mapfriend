@@ -41,16 +41,15 @@ export default function ChatPage() {
     return [...friends].sort((a, b) => a.username.localeCompare(b.username));
   }, [friends]);
 
-  const canNotify =
-    typeof window !== "undefined" &&
-    "Notification" in window &&
-    Notification.permission === "granted" &&
-    notificationsEnabled;
+  const notificationSupported = typeof window !== "undefined" && "Notification" in window;
+  const notificationPermission =
+    typeof window !== "undefined" && "Notification" in window ? Notification.permission : "default";
+  const notificationSecureContext = typeof window !== "undefined" ? window.isSecureContext : true;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!("Notification" in window)) return;
-    if (Notification.permission === "granted") setNotificationsEnabled(true);
+    const stored = window.localStorage.getItem("mf_notifications_enabled");
+    setNotificationsEnabled(stored === "true");
   }, []);
 
   useEffect(() => {
@@ -219,18 +218,6 @@ export default function ChatPage() {
           }
           return next;
         });
-
-        for (const m of incoming) {
-          const from = m.fromUsername ?? "Unknown";
-          if (selected?.username === from) continue;
-          if (!canNotify) continue;
-          if (!document.hidden) continue;
-          try {
-            new Notification(from, { body: m.body.slice(0, 120) });
-          } catch {
-            // ignore
-          }
-        }
       } catch {
         // ignore polling errors
       }
@@ -240,13 +227,33 @@ export default function ChatPage() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [canNotify, me, selected?.username]);
+  }, [me, selected?.username]);
 
   async function enableNotifications() {
     if (typeof window === "undefined" || !("Notification" in window)) return;
     try {
       const p = await Notification.requestPermission();
-      if (p === "granted") setNotificationsEnabled(true);
+      if (p === "granted") {
+        window.localStorage.setItem("mf_notifications_enabled", "true");
+        setNotificationsEnabled(true);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  function disableNotifications() {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("mf_notifications_enabled", "false");
+    setNotificationsEnabled(false);
+  }
+
+  function testNotification() {
+    if (typeof window === "undefined") return;
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    try {
+      new Notification("MapFriend", { body: "Notifications are working." });
     } catch {
       // ignore
     }
@@ -327,8 +334,8 @@ export default function ChatPage() {
             <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
               Friends
             </h2>
-            {typeof window !== "undefined" && "Notification" in window ? (
-              Notification.permission === "granted" ? null : (
+            {notificationSupported ? (
+              notificationPermission !== "granted" ? (
                 <button
                   type="button"
                   onClick={enableNotifications}
@@ -341,13 +348,82 @@ export default function ChatPage() {
                     fontSize: 12,
                     cursor: "pointer",
                   }}
-                  title="Enable browser notifications for new messages (while the app is open)"
+                  title="Enable notifications for new messages (while the app is open)"
                 >
                   Enable notifications
+                </button>
+              ) : notificationsEnabled ? (
+                <button
+                  type="button"
+                  onClick={disableNotifications}
+                  style={{
+                    background: "rgba(17,24,39,0.95)",
+                    color: "white",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 9999,
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                  title="Turn off notifications"
+                >
+                  Notifications on
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window === "undefined") return;
+                    window.localStorage.setItem("mf_notifications_enabled", "true");
+                    setNotificationsEnabled(true);
+                  }}
+                  style={{
+                    background: "white",
+                    color: "#111827",
+                    border: "1px solid rgba(0,0,0,0.12)",
+                    borderRadius: 9999,
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                  title="Turn on notifications"
+                >
+                  Notifications off
                 </button>
               )
             ) : null}
           </div>
+
+          {notificationSupported && !notificationSecureContext ? (
+            <div style={{ color: "#b45309", fontSize: 12, marginBottom: 10 }}>
+              Notifications need HTTPS (secure origin).
+            </div>
+          ) : null}
+          {notificationSupported && notificationPermission === "denied" ? (
+            <div style={{ color: "#b91c1c", fontSize: 12, marginBottom: 10 }}>
+              Notifications are blocked in your browser settings for this site.
+            </div>
+          ) : null}
+          {notificationSupported && notificationPermission === "granted" ? (
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <button
+                type="button"
+                onClick={testNotification}
+                style={{
+                  background: "white",
+                  color: "#111827",
+                  border: "1px solid rgba(0,0,0,0.12)",
+                  borderRadius: 9999,
+                  padding: "6px 10px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+                title="Send a test notification"
+              >
+                Test notification
+              </button>
+            </div>
+          ) : null}
 
           {loading ? (
             <div style={{ color: "#6b7280" }}>Loading...</div>
