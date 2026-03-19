@@ -36,6 +36,7 @@ export default function ChatPage() {
   const knownMessageIdsRef = useRef<Set<string>>(new Set());
   const lastInboxSinceRef = useRef<string>(new Date(Date.now() - 60_000).toISOString());
   const lastConversationSinceRef = useRef<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const friendsSorted = useMemo(() => {
     return [...friends].sort((a, b) => a.username.localeCompare(b.username));
@@ -174,6 +175,11 @@ export default function ChatPage() {
   }, [selected]);
 
   useEffect(() => {
+    // Keep the latest message visible when chatting (WhatsApp-like behavior).
+    messagesEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [messages.length, selected?.username]);
+
+  useEffect(() => {
     if (!me) return;
 
     let cancelled = false;
@@ -293,280 +299,165 @@ export default function ChatPage() {
     }
   }
 
+  function initialsFor(username: string) {
+    const clean = username.trim();
+    if (!clean) return "?";
+    const parts = clean.split(/\s+/g).filter(Boolean);
+    const first = (parts[0]?.[0] ?? clean[0] ?? "?").toUpperCase();
+    const second =
+      parts.length >= 2 ? (parts[1]?.[0] ?? "").toUpperCase() : (clean[1] ?? "").toUpperCase();
+    return (first + second).slice(0, 2);
+  }
+
+  function formatTime(iso: string) {
+    const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return "";
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: "24px 16px 96px",
-        background: "linear-gradient(180deg, #ffffff 0%, #f9fafb 100%)",
-        color: "#111827",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          marginBottom: 10,
-        }}
-      >
-        <img
-          src="/logo.png"
-          alt="MapFriend"
-          style={{ width: 32, height: 32, objectFit: "contain" }}
-        />
-        <h1 style={{ fontSize: 22, fontWeight: 700 }}>Chat</h1>
-      </div>
+    <main className="chatRoot">
+      <header className="topBar">
+        <div className="topBarLeft">
+          <img src="/logo.png" alt="" aria-hidden="true" className="topBarLogo" />
+          <div className="topBarTitle">Chats</div>
+        </div>
+        <div className="topBarRight">
+          {notificationSupported ? (
+            notificationPermission !== "granted" ? (
+              <button type="button" className="pillBtn" onClick={enableNotifications}>
+                Enable notifications
+              </button>
+            ) : notificationsEnabled ? (
+              <button type="button" className="pillBtn pillBtnOn" onClick={disableNotifications}>
+                Notifications on
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="pillBtn"
+                onClick={() => {
+                  if (typeof window === "undefined") return;
+                  window.localStorage.setItem("mf_notifications_enabled", "true");
+                  setNotificationsEnabled(true);
+                }}
+              >
+                Notifications off
+              </button>
+            )
+          ) : null}
+        </div>
+      </header>
 
-      <div
-        className={`chatGrid ${selected ? "hasSelected" : ""}`}
-      >
-        <div
-          className="friendsPane"
-          style={{
-            background: "white",
-            border: "1px solid rgba(0,0,0,0.08)",
-            borderRadius: 16,
-            padding: 14,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
-              Friends
-            </h2>
-            {notificationSupported ? (
-              notificationPermission !== "granted" ? (
-                <button
-                  type="button"
-                  onClick={enableNotifications}
-                  style={{
-                    background: "white",
-                    color: "#111827",
-                    border: "1px solid rgba(0,0,0,0.12)",
-                    borderRadius: 9999,
-                    padding: "6px 10px",
-                    fontSize: 12,
-                    cursor: "pointer",
-                  }}
-                  title="Enable notifications for new messages (while the app is open)"
-                >
-                  Enable notifications
-                </button>
-              ) : notificationsEnabled ? (
-                <button
-                  type="button"
-                  onClick={disableNotifications}
-                  style={{
-                    background: "rgba(17,24,39,0.95)",
-                    color: "white",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    borderRadius: 9999,
-                    padding: "6px 10px",
-                    fontSize: 12,
-                    cursor: "pointer",
-                  }}
-                  title="Turn off notifications"
-                >
-                  Notifications on
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (typeof window === "undefined") return;
-                    window.localStorage.setItem("mf_notifications_enabled", "true");
-                    setNotificationsEnabled(true);
-                  }}
-                  style={{
-                    background: "white",
-                    color: "#111827",
-                    border: "1px solid rgba(0,0,0,0.12)",
-                    borderRadius: 9999,
-                    padding: "6px 10px",
-                    fontSize: 12,
-                    cursor: "pointer",
-                  }}
-                  title="Turn on notifications"
-                >
-                  Notifications off
-                </button>
-              )
-            ) : null}
-          </div>
-
+      <div className={`chatGrid ${selected ? "hasSelected" : ""}`}>
+        <section className="friendsPane">
           {notificationSupported && !notificationSecureContext ? (
-            <div style={{ color: "#b45309", fontSize: 12, marginBottom: 10 }}>
-              Notifications need HTTPS (secure origin).
-            </div>
+            <div className="notice noticeWarn">Notifications need HTTPS (secure origin).</div>
           ) : null}
           {notificationSupported && notificationPermission === "denied" ? (
-            <div style={{ color: "#b91c1c", fontSize: 12, marginBottom: 10 }}>
+            <div className="notice noticeError">
               Notifications are blocked in your browser settings for this site.
             </div>
           ) : null}
           {notificationSupported && notificationPermission === "granted" ? (
-            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-              <button
-                type="button"
-                onClick={testNotification}
-                style={{
-                  background: "white",
-                  color: "#111827",
-                  border: "1px solid rgba(0,0,0,0.12)",
-                  borderRadius: 9999,
-                  padding: "6px 10px",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
-                title="Send a test notification"
-              >
+            <div style={{ padding: "0 6px 10px" }}>
+              {/* <button type="button" className="pillBtn" onClick={testNotification}>
                 Test notification
-              </button>
+              </button> */}
             </div>
           ) : null}
 
-          {loading ? (
-            <div style={{ color: "#6b7280" }}>Loading...</div>
-          ) : error ? (
-            <div style={{ color: "#b91c1c" }}>{error}</div>
-          ) : friendsSorted.length === 0 ? (
-            <div style={{ color: "#6b7280" }}>
-              No friends yet. Accept a friend request in Settings to see it here.
+          <div className="listCard">
+            <div className="listHeader">
+              <div className="listHeaderTitle">Friends</div>
+              <div className="listHeaderSub">
+                {me ? `@${me.username}` : "Login to chat"}
+              </div>
             </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {friendsSorted.map((f) => {
-                const active = selected?.username === f.username;
-                const unread = unreadByUsername[f.username] ?? 0;
-                return (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => {
-                      setSelected(f);
-                      setUnreadByUsername((prev) => ({ ...prev, [f.username]: 0 }));
-                    }}
-                    style={{
-                      width: "100%",
-                      textAlign: "left",
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      borderRadius: 14,
-                      padding: 12,
-                      background: active
-                        ? "rgba(17,24,39,0.95)"
-                        : "linear-gradient(180deg, #ffffff 0%, #f9fafb 100%)",
-                      color: active ? "white" : "#111827",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 10,
-                    }}
-                  >
-                    <span style={{ fontWeight: 700 }}>{f.username}</span>
-                    {unread > 0 ? (
-                      <span
-                        style={{
-                          background: active ? "rgba(255,255,255,0.15)" : "#111827",
-                          color: "white",
-                          borderRadius: 9999,
-                          padding: "2px 8px",
-                          fontSize: 12,
-                        }}
-                      >
-                        {unread}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+
+            {loading ? (
+              <div className="muted" style={{ padding: 12 }}>
+                Loading...
+              </div>
+            ) : error ? (
+              <div className="errorText" style={{ padding: 12 }}>
+                {error}
+              </div>
+            ) : friendsSorted.length === 0 ? (
+              <div className="muted" style={{ padding: 12 }}>
+                No friends yet. Accept a friend request in Settings to see it here.
+              </div>
+            ) : (
+              <div className="friendList">
+                {friendsSorted.map((f) => {
+                  const active = selected?.username === f.username;
+                  const unread = unreadByUsername[f.username] ?? 0;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      className={`friendRow ${active ? "active" : ""}`}
+                      onClick={() => {
+                        setSelected(f);
+                        setUnreadByUsername((prev) => ({ ...prev, [f.username]: 0 }));
+                      }}
+                    >
+                      <div className="avatar" aria-hidden="true">
+                        {initialsFor(f.username)}
+                      </div>
+                      <div className="friendMeta">
+                        <div className="friendName">{f.username}</div>
+                        <div className="friendSub">{unread > 0 ? "New messages" : "Tap to chat"}</div>
+                      </div>
+                      <div className="friendRight">
+                        {unread > 0 ? <div className="unreadBadge">{unread}</div> : null}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
 
         {selected ? (
-          <div
-            className="conversationPane"
-            style={{
-              background: "white",
-              border: "1px solid rgba(0,0,0,0.08)",
-              borderRadius: 16,
-              padding: 14,
-              display: "flex",
-              flexDirection: "column",
-              minHeight: 420,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                style={{
-                  background: "white",
-                  color: "#111827",
-                  border: "1px solid rgba(0,0,0,0.12)",
-                  borderRadius: 9999,
-                  padding: "6px 10px",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
-              >
+          <section className="conversationPane" aria-label={`Chat with ${selected.username}`}>
+            <div className="convHeader">
+              <button type="button" className="iconBtn" onClick={() => setSelected(null)}>
                 Back
               </button>
-              <div style={{ fontWeight: 800, fontSize: 16 }}>{selected.username}</div>
+              <div className="avatar avatarSmall" aria-hidden="true">
+                {initialsFor(selected.username)}
+              </div>
+              <div className="convTitleWrap">
+                <div className="convTitle">{selected.username}</div>
+                <div className="convSubtitle">Online</div>
+              </div>
             </div>
 
-            {messageError ? (
-              <div style={{ color: "#b91c1c", marginBottom: 10 }}>{messageError}</div>
-            ) : null}
+            {messageError ? <div className="notice noticeError">{messageError}</div> : null}
 
-            <div
-              style={{
-                flex: 1,
-                overflowY: "auto",
-                border: "1px solid rgba(0,0,0,0.06)",
-                borderRadius: 14,
-                padding: 10,
-                background: "linear-gradient(180deg, #ffffff 0%, #f9fafb 100%)",
-              }}
-            >
-              {me && messages.length === 0 ? (
-                <div style={{ color: "#6b7280" }}>Say hi!</div>
-              ) : null}
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="messagesPane">
+              {me && messages.length === 0 ? <div className="muted">Say hi!</div> : null}
+              <div className="messageList">
                 {messages.map((m) => {
                   const mine = me ? m.fromUserId === me.id : false;
                   return (
-                    <div
-                      key={m.id}
-                      style={{
-                        display: "flex",
-                        justifyContent: mine ? "flex-end" : "flex-start",
-                      }}
-                    >
-                      <div
-                        style={{
-                          maxWidth: "80%",
-                          padding: "8px 10px",
-                          borderRadius: 14,
-                          background: mine ? "rgba(17,24,39,0.95)" : "white",
-                          color: mine ? "white" : "#111827",
-                          border: mine ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.08)",
-                          whiteSpace: "pre-wrap",
-                          wordBreak: "break-word",
-                        }}
-                        title={new Date(m.createdAt).toLocaleString()}
-                      >
-                        {m.body}
+                    <div key={m.id} className={`msgRow ${mine ? "mine" : "theirs"}`}>
+                      <div className={`bubble ${mine ? "bubbleMine" : "bubbleTheirs"}`}>
+                        <div className="bubbleBody">{m.body}</div>
+                        <div className="bubbleTime">{formatTime(m.createdAt)}</div>
                       </div>
                     </div>
                   );
                 })}
+                <div ref={messagesEndRef} />
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <div className="composer">
               <input
+                className="composerInput"
                 value={messageDraft}
                 onChange={(e) => setMessageDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -575,55 +466,412 @@ export default function ChatPage() {
                     void send();
                   }
                 }}
-                placeholder="Message..."
-                style={{
-                  flex: 1,
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(0,0,0,0.12)",
-                }}
+                placeholder="Message"
+                aria-label="Message"
               />
               <button
                 type="button"
+                className="sendBtn"
                 onClick={send}
                 disabled={isSending || !messageDraft.trim()}
-                style={{
-                  background: "#111827",
-                  color: "white",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                  fontSize: 14,
-                  opacity: isSending || !messageDraft.trim() ? 0.7 : 1,
-                  cursor: isSending || !messageDraft.trim() ? "not-allowed" : "pointer",
-                }}
               >
                 {isSending ? "Sending..." : "Send"}
               </button>
             </div>
-          </div>
+          </section>
         ) : null}
       </div>
 
       <style jsx>{`
+        .chatRoot {
+          min-height: 100vh;
+          padding: 12px 12px 96px;
+          background: #0b141a;
+          color: #e9edef;
+        }
+
+        .topBar {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 10px 10px;
+          border-radius: 18px;
+          background: rgba(17, 27, 33, 0.92);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          backdrop-filter: blur(10px);
+        }
+
+        .topBarLeft {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+        }
+
+        .topBarLogo {
+          width: 28px;
+          height: 28px;
+          object-fit: contain;
+          border-radius: 8px;
+        }
+
+        .topBarTitle {
+          font-size: 18px;
+          font-weight: 800;
+          letter-spacing: 0.2px;
+        }
+
+        .topBarRight {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex: 0 0 auto;
+        }
+
+        .pillBtn {
+          background: rgba(255, 255, 255, 0.06);
+          color: #e9edef;
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          border-radius: 9999px;
+          padding: 7px 10px;
+          font-size: 12px;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+
+        .pillBtnOn {
+          background: rgba(0, 168, 132, 0.18);
+          border-color: rgba(0, 168, 132, 0.35);
+        }
+
         .chatGrid {
-          margin-top: 16px;
+          margin-top: 12px;
           display: grid;
           grid-template-columns: 1fr;
           gap: 12px;
         }
 
+        .friendsPane {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .notice {
+          border-radius: 14px;
+          padding: 10px 12px;
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          background: rgba(17, 27, 33, 0.92);
+          font-size: 12px;
+        }
+
+        .noticeWarn {
+          color: #ffd18b;
+        }
+
+        .noticeError {
+          color: #ffb4b4;
+        }
+
+        .listCard {
+          border-radius: 18px;
+          background: rgba(17, 27, 33, 0.92);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          overflow: hidden;
+        }
+
+        .listHeader {
+          padding: 14px 14px 10px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .listHeaderTitle {
+          font-weight: 800;
+          font-size: 14px;
+        }
+
+        .listHeaderSub {
+          margin-top: 2px;
+          color: rgba(233, 237, 239, 0.65);
+          font-size: 12px;
+        }
+
+        .friendList {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .friendRow {
+          width: 100%;
+          text-align: left;
+          display: grid;
+          grid-template-columns: 40px 1fr auto;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 14px;
+          background: transparent;
+          border: none;
+          color: inherit;
+          cursor: pointer;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .friendRow:last-child {
+          border-bottom: none;
+        }
+
+        .friendRow:hover {
+          background: rgba(255, 255, 255, 0.04);
+        }
+
+        .friendRow.active {
+          background: rgba(0, 168, 132, 0.16);
+        }
+
+        .avatar {
+          width: 40px;
+          height: 40px;
+          border-radius: 9999px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 900;
+          letter-spacing: 0.5px;
+          color: #e9edef;
+          user-select: none;
+        }
+
+        .avatarSmall {
+          width: 34px;
+          height: 34px;
+          font-size: 12px;
+        }
+
+        .friendMeta {
+          min-width: 0;
+        }
+
+        .friendName {
+          font-weight: 800;
+          font-size: 14px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .friendSub {
+          margin-top: 2px;
+          font-size: 12px;
+          color: rgba(233, 237, 239, 0.65);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .friendRight {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .unreadBadge {
+          min-width: 22px;
+          height: 22px;
+          padding: 0 7px;
+          border-radius: 9999px;
+          background: #00a884;
+          color: #052b24;
+          font-weight: 900;
+          font-size: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .conversationPane {
+          border-radius: 18px;
+          background: rgba(17, 27, 33, 0.92);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          min-height: 520px;
+        }
+
+        .convHeader {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 12px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+          background: rgba(17, 27, 33, 0.96);
+        }
+
+        .iconBtn {
+          background: rgba(255, 255, 255, 0.06);
+          color: #e9edef;
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          border-radius: 9999px;
+          padding: 7px 10px;
+          font-size: 12px;
+          cursor: pointer;
+        }
+
+        .convTitleWrap {
+          min-width: 0;
+        }
+
+        .convTitle {
+          font-weight: 900;
+          font-size: 14px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .convSubtitle {
+          margin-top: 2px;
+          font-size: 12px;
+          color: rgba(233, 237, 239, 0.65);
+        }
+
+        .messagesPane {
+          flex: 1;
+          padding: 12px;
+          overflow: auto;
+          background: radial-gradient(circle at 20% 20%, rgba(0, 168, 132, 0.10), transparent 45%),
+            radial-gradient(circle at 80% 10%, rgba(255, 255, 255, 0.06), transparent 40%),
+            #0b141a;
+        }
+
+        .messageList {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .msgRow {
+          display: flex;
+        }
+
+        .msgRow.mine {
+          justify-content: flex-end;
+        }
+
+        .msgRow.theirs {
+          justify-content: flex-start;
+        }
+
+        .bubble {
+          max-width: min(520px, 82%);
+          padding: 9px 10px 7px;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+        }
+
+        .bubbleMine {
+          background: rgba(0, 168, 132, 0.22);
+          border-color: rgba(0, 168, 132, 0.35);
+        }
+
+        .bubbleTheirs {
+          background: rgba(17, 27, 33, 0.92);
+          border-color: rgba(255, 255, 255, 0.10);
+        }
+
+        .bubbleBody {
+          white-space: pre-wrap;
+          word-break: break-word;
+          font-size: 14px;
+          line-height: 1.35;
+        }
+
+        .bubbleTime {
+          margin-top: 4px;
+          font-size: 11px;
+          color: rgba(233, 237, 239, 0.65);
+          text-align: right;
+        }
+
+        .composer {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 8px;
+          padding: 10px 12px;
+          border-top: 1px solid rgba(255, 255, 255, 0.06);
+          background: rgba(17, 27, 33, 0.96);
+        }
+
+        .composerInput {
+          width: 100%;
+          border-radius: 9999px;
+          padding: 10px 12px;
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          background: rgba(255, 255, 255, 0.06);
+          color: #e9edef;
+          outline: none;
+        }
+
+        .composerInput::placeholder {
+          color: rgba(233, 237, 239, 0.55);
+        }
+
+        .sendBtn {
+          border-radius: 9999px;
+          padding: 10px 14px;
+          border: 1px solid rgba(0, 168, 132, 0.35);
+          background: #00a884;
+          color: #052b24;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .sendBtn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+
+        .muted {
+          color: rgba(233, 237, 239, 0.65);
+        }
+
+        .errorText {
+          color: #ffb4b4;
+        }
+
+        /* Mobile: show conversation full screen */
         .chatGrid.hasSelected .friendsPane {
           display: none;
         }
 
-        @media (min-width: 860px) {
+        @media (min-width: 920px) {
+          .chatRoot {
+            padding-left: 16px;
+            padding-right: 16px;
+          }
+
           .chatGrid.hasSelected {
-            grid-template-columns: minmax(240px, 1fr) 2fr;
+            grid-template-columns: minmax(320px, 1fr) 2fr;
+            align-items: start;
           }
 
           .chatGrid.hasSelected .friendsPane {
-            display: block;
+            display: flex;
+          }
+
+          .conversationPane {
+            min-height: calc(100vh - 12px - 12px - 96px - 56px);
+          }
+
+          .iconBtn {
+            display: none;
           }
         }
       `}</style>
