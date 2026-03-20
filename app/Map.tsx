@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Circle,
   CircleMarker,
@@ -18,6 +18,23 @@ type Position = {
   accuracy?: number;
 };
 
+const LOCATION_UPDATE_MIN_METERS = 50;
+const LOCATION_UPDATE_MIN_MS = 30_000;
+const LOCATION_UPDATE_MAX_ACCURACY_METERS = 200;
+
+function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  // Haversine
+  const R = 6_371_000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+  const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
 type SavedLocation = {
   lat: number;
   lng: number;
@@ -34,6 +51,8 @@ type FriendRequestEntry = {
   status: "sending" | "sent" | "error";
   error?: string;
 };
+
+type Friend = { id: string; username: string };
 
 const PURPOSES: User["purpose"][] = ["friends", "hangout", "hookup", "social"];
 
@@ -106,6 +125,7 @@ export function Map() {
   const [friendRequests, setFriendRequests] = useState<Record<string, FriendRequestEntry>>(
     {},
   );
+  const [friends, setFriends] = useState<Set<string>>(new Set());
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"register" | "login">("register");
   const [authUsername, setAuthUsername] = useState("");
@@ -115,6 +135,11 @@ export function Map() {
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
   const [hasAutoFitted, setHasAutoFitted] = useState(false);
+
+  const lastLocationSentRef = useRef<{ lat: number; lng: number; at: number } | null>(
+    null,
+  );
+  const locationSendInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!window.isSecureContext) {
@@ -223,6 +248,102 @@ export function Map() {
     };
   }, [user]);
 
+  useEffect(() => {
+    if (!user) {
+      setFriends(new Set());
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadFriends() {
+      try {
+        const res = await fetch("/api/friends", { method: "GET" });
+        if (res.status === 401) return;
+        if (!res.ok) return;
+
+        const data = (await res.json().catch(() => null)) as
+          | { ok: true; friends: Friend[] }
+          | { ok: false; error: string }
+          | null;
+
+        if (cancelled || !data || !("ok" in data) || !data.ok) return;
+
+        const next = new Set(
+          (data.friends ?? [])
+            .map((f) => f.username?.trim())
+            .filter((u): u is string => !!u)
+            .map((u) => u.toLowerCase()),
+        );
+        setFriends(next);
+      } catch {
+        // ignore
+      }
+    }
+
+    void loadFriends();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !position) return;
+    const currentPosition = position;
+    if (
+      typeof currentPosition.accuracy === "number" &&
+      currentPosition.accuracy > LOCATION_UPDATE_MAX_ACCURACY_METERS
+    ) {
+      return;
+    }
+    if (locationSendInFlightRef.current) return;
+
+    const last = lastLocationSentRef.current;
+    const now = Date.now();
+    const movedMeters = last ? distanceMeters(last, currentPosition) : Infinity;
+    const elapsedMs = last ? now - last.at : Infinity;
+
+    if (movedMeters < LOCATION_UPDATE_MIN_METERS) return;
+    if (elapsedMs < LOCATION_UPDATE_MIN_MS) return;
+
+    let cancelled = false;
+
+    async function save() {
+      try {
+        locationSendInFlightRef.current = true;
+        // Optimistic timestamping to avoid bursts while a request is in-flight.
+        lastLocationSentRef.current = {
+          lat: currentPosition.lat,
+          lng: currentPosition.lng,
+          at: now,
+        };
+
+        const res = await fetch("/api/locations", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            lat: currentPosition.lat,
+            lng: currentPosition.lng,
+            accuracy: currentPosition.accuracy,
+          }),
+        });
+        if (cancelled) return;
+        if (!res.ok) return;
+      } catch {
+        // ignore
+      } finally {
+        locationSendInFlightRef.current = false;
+      }
+    }
+
+    void save();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [position, user]);
+
   const filteredLocations = useMemo(() => {
     if (purposeFilter === "all") return savedLocations;
     return savedLocations.filter((l) => l.purpose === purposeFilter);
@@ -260,7 +381,17 @@ export function Map() {
                   }
                 : undefined,
             }
-          : { username: authUsername.trim(), password: authPassword };
+          : {
+              username: authUsername.trim(),
+              password: authPassword,
+              location: position
+                ? {
+                    lat: position.lat,
+                    lng: position.lng,
+                    accuracy: position.accuracy,
+                  }
+                : undefined,
+            };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -280,6 +411,11 @@ export function Map() {
       setUser(data.user);
       setAuthOpen(false);
       setAuthPassword("");
+      try {
+        window.dispatchEvent(new Event("mf:auth-changed"));
+      } catch {
+        // ignore
+      }
     } catch (e) {
       setAuthError(e instanceof Error ? e.message : "Failed.");
     } finally {
@@ -349,8 +485,15 @@ export function Map() {
         style={{ height: "100%", width: "100%" }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"
+          subdomains="abcd"
+          maxZoom={20}
+        />
+        <TileLayer
+          url="https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png"
+          subdomains="abcd"
+          maxZoom={20}
         />
 
         <MapRefSetter onMap={setMap} />
@@ -433,7 +576,9 @@ export function Map() {
                   </span>
                 </>
               ) : null}
-              {loc.username?.trim() && (!user || loc.username.trim() !== user.username) ? (
+              {loc.username?.trim() &&
+              (!user || loc.username.trim() !== user.username) &&
+              !friends.has(loc.username.trim().toLowerCase()) ? (
                 <div style={{ marginTop: 10, minWidth: 160 }}>
                   <button
                     type="button"

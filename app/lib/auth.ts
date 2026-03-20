@@ -9,6 +9,7 @@ type User = {
   id: string;
   username: string;
   purpose: "friends" | "hangout" | "hookup" | "social";
+  gender?: string | null;
 };
 
 export function hashPassword(password: string) {
@@ -97,7 +98,7 @@ async function getUserForSessionToken(token: string): Promise<User | null> {
 
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id,username,purpose")
+    .select("id,username,purpose,gender")
     .eq("id", session.user_id)
     .maybeSingle();
 
@@ -107,6 +108,7 @@ async function getUserForSessionToken(token: string): Promise<User | null> {
     id: user.id,
     username: user.username,
     purpose: user.purpose,
+    gender: (user as unknown as { gender?: string | null }).gender ?? null,
   } as User;
 }
 

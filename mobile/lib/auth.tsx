@@ -13,18 +13,21 @@ export type SessionUser = {
   id: string;
   username: string;
   purpose: Purpose;
+  gender?: string | null;
 };
+
+export type SessionLocation = { lat: number; lng: number; accuracy?: number };
 
 type AuthContextValue = {
   token: string | null;
   user: SessionUser | null;
   isHydrated: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, opts?: { location?: SessionLocation }) => Promise<void>;
   register: (opts: {
     username: string;
     password: string;
     purpose: Purpose;
-    location: { lat: number; lng: number; accuracy?: number };
+    location: SessionLocation;
   }) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -81,10 +84,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(me.user);
     }
 
-    async function login(username: string, password: string) {
+    async function login(
+      username: string,
+      password: string,
+      opts?: { location?: SessionLocation },
+    ) {
       const res = await apiFetchJson<{ ok: true; token: string; user: SessionUser }>(
         "/api/auth/login",
-        { method: "POST", body: { username, password } },
+        { method: "POST", body: { username, password, location: opts?.location } },
       );
 
       await SecureStore.setItemAsync(TOKEN_KEY, res.token);
@@ -151,4 +158,3 @@ export function asApiMessage(e: unknown) {
   }
   return e instanceof Error ? e.message : "Failed.";
 }
-

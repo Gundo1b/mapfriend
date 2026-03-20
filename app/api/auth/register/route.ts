@@ -88,7 +88,7 @@ export async function POST(request: Request) {
   const { data: inserted, error: insertError } = await supabase
     .from("users")
     .insert({ username, password_hash: passwordHash, purpose })
-    .select("id,username,purpose")
+    .select("id,username,purpose,gender")
     .single();
 
   if (insertError) {

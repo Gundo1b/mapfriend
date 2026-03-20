@@ -34,6 +34,23 @@ export function AuthForm() {
     setError(null);
     try {
       if (mode === "login") {
+        const perm = await Location.requestForegroundPermissionsAsync();
+        if (perm.granted) {
+          const pos = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+
+          await login(username.trim(), password, {
+            location: {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy:
+                typeof pos.coords.accuracy === "number" ? pos.coords.accuracy : undefined,
+            },
+          });
+          return;
+        }
+
         await login(username.trim(), password);
         return;
       }

@@ -23,8 +23,12 @@ create table if not exists public.users (
   created_at timestamptz not null default now(),
   username text not null unique,
   password_hash text not null,
-  purpose text not null check (purpose in ('friends', 'hangout', 'hookup', 'social'))
+  purpose text not null check (purpose in ('friends', 'hangout', 'hookup', 'social')),
+  gender text null
 );
+
+-- Safe to re-run if `public.users` already exists
+alter table public.users add column if not exists gender text null;
 
 create table if not exists public.sessions (
   id uuid primary key default gen_random_uuid(),

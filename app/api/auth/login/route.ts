@@ -4,6 +4,7 @@ import { createSession, verifyPassword } from "../../../lib/auth";
 type LoginPayload = {
   username: string;
   password: string;
+  location?: { lat: number; lng: number; accuracy?: number };
 };
 
 export async function POST(request: Request) {
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
 
   const username = payload?.username?.trim();
   const password = payload?.password ?? "";
+  const location = payload?.location;
 
   if (!username || !password) {
     return Response.json(
@@ -32,9 +34,29 @@ export async function POST(request: Request) {
     );
   }
 
+  const lat = location?.lat;
+  const lng = location?.lng;
+  const accuracy = location?.accuracy;
+  const hasValidLocation =
+    typeof lat === "number" &&
+    Number.isFinite(lat) &&
+    typeof lng === "number" &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180;
+
+  if (location && !hasValidLocation) {
+    return Response.json(
+      { ok: false, error: "Missing/invalid lat,lng." },
+      { status: 400 },
+    );
+  }
+
   const { data: user, error } = await supabase
     .from("users")
-    .select("id,username,purpose,password_hash")
+    .select("id,username,purpose,gender,password_hash")
     .eq("username", username)
     .maybeSingle();
 
@@ -45,11 +67,29 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: "Invalid credentials." }, { status: 401 });
   }
 
+  if (hasValidLocation) {
+    const { error: locationError } = await supabase.from("locations").insert({
+      user_id: user.id,
+      lat,
+      lng,
+      accuracy: typeof accuracy === "number" && Number.isFinite(accuracy) ? accuracy : null,
+    });
+
+    if (locationError) {
+      return Response.json({ ok: false, error: locationError.message }, { status: 500 });
+    }
+  }
+
   const token = await createSession(user.id);
 
   return Response.json({
     ok: true,
     token,
-    user: { id: user.id, username: user.username, purpose: user.purpose },
+    user: {
+      id: user.id,
+      username: user.username,
+      purpose: user.purpose,
+      gender: (user as unknown as { gender?: string | null }).gender ?? null,
+    },
   });
 }
