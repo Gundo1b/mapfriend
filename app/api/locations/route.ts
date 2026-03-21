@@ -46,21 +46,39 @@ export async function GET(request: Request) {
     new Set(locations.map((l) => l.user_id).filter((id): id is string => !!id)),
   );
 
-  let usersById = new Map<string, { username: string; purpose: string }>();
+  let usersById = new Map<
+    string,
+    { username: string; purpose: string; avatar_url?: string | null; bio?: string | null }
+  >();
   if (userIds.length) {
-    const { data: users, error: usersError } = await supabase
+    const withProfile = await supabase
       .from("users")
-      .select("id,username,purpose")
+      .select("id,username,purpose,avatar_url,bio")
       .in("id", userIds);
 
-    if (usersError) {
-      return Response.json({ ok: false, error: usersError.message }, { status: 500 });
+    let users = withProfile.data;
+    let err = withProfile.error;
+
+    // Back-compat: older DB schema may not have `avatar_url`/`bio`.
+    if (err) {
+      const fallback = await supabase.from("users").select("id,username,purpose").in("id", userIds);
+      users = fallback.data as typeof users;
+      err = fallback.error;
+    }
+
+    if (err || !users) {
+      return Response.json({ ok: false, error: err?.message || "Failed." }, { status: 500 });
     }
 
     usersById = new Map(
       (users ?? []).map((u) => [
         u.id as string,
-        { username: u.username as string, purpose: u.purpose as string },
+        {
+          username: u.username as string,
+          purpose: u.purpose as string,
+          avatar_url: (u as unknown as { avatar_url?: string | null }).avatar_url ?? null,
+          bio: (u as unknown as { bio?: string | null }).bio ?? null,
+        },
       ]),
     );
   }
@@ -72,6 +90,8 @@ export async function GET(request: Request) {
       lng: l.lng,
       username: l.user_id ? usersById.get(l.user_id)?.username ?? null : null,
       purpose: l.user_id ? usersById.get(l.user_id)?.purpose ?? null : null,
+      avatar_url: l.user_id ? usersById.get(l.user_id)?.avatar_url ?? null : null,
+      bio: l.user_id ? usersById.get(l.user_id)?.bio ?? null : null,
     })),
   });
 }

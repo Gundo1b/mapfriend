@@ -122,16 +122,16 @@ export function GenderGate() {
         style={{
           width: "100%",
           maxWidth: 420,
-          background: "white",
+          background: "var(--mf-surface)",
           borderRadius: 16,
           padding: 16,
-          border: "1px solid rgba(0,0,0,0.08)",
+          border: "1px solid var(--mf-border)",
         }}
       >
         <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>
           Choose your gender
         </div>
-        <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 12 }}>
+        <div className="mf-muted" style={{ fontSize: 13, marginBottom: 12 }}>
           This is required to finish setting up your profile.
         </div>
 
@@ -142,14 +142,8 @@ export function GenderGate() {
           value={gender}
           onChange={(e) => setGender(e.target.value as typeof gender)}
           disabled={saving}
-          style={{
-            width: "100%",
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(0,0,0,0.12)",
-            marginBottom: 10,
-            background: "white",
-          }}
+          className="mf-select"
+          style={{ width: "100%", marginBottom: 10 }}
         >
           {GENDER_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
@@ -159,7 +153,7 @@ export function GenderGate() {
         </select>
 
         {error ? (
-          <div style={{ color: "#b91c1c", fontSize: 13, marginBottom: 10 }}>
+          <div className="mf-error" style={{ fontSize: 13, marginBottom: 10 }}>
             {error}
           </div>
         ) : null}
@@ -168,14 +162,9 @@ export function GenderGate() {
           type="button"
           onClick={save}
           disabled={saving}
+          className="mf-btn mf-btnPrimary"
           style={{
             width: "100%",
-            background: "#111827",
-            color: "white",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 12,
-            padding: "10px 12px",
-            fontSize: 14,
             opacity: saving ? 0.7 : 1,
             cursor: saving ? "not-allowed" : "pointer",
           }}

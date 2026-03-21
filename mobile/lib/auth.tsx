@@ -14,6 +14,8 @@ export type SessionUser = {
   username: string;
   purpose: Purpose;
   gender?: string | null;
+  avatar_url?: string | null;
+  bio?: string | null;
 };
 
 export type SessionLocation = { lat: number; lng: number; accuracy?: number };

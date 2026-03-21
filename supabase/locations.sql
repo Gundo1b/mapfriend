@@ -24,11 +24,15 @@ create table if not exists public.users (
   username text not null unique,
   password_hash text not null,
   purpose text not null check (purpose in ('friends', 'hangout', 'hookup', 'social')),
-  gender text null
+  gender text null,
+  avatar_url text null,
+  bio text null
 );
 
 -- Safe to re-run if `public.users` already exists
 alter table public.users add column if not exists gender text null;
+alter table public.users add column if not exists avatar_url text null;
+alter table public.users add column if not exists bio text null;
 
 create table if not exists public.sessions (
   id uuid primary key default gen_random_uuid(),

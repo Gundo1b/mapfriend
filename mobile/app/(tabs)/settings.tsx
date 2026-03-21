@@ -13,6 +13,13 @@ import {
 import { AuthForm } from "@/components/AuthForm";
 import { apiFetchJson, getAppVersionLabel } from "@/lib/api";
 import { asApiMessage, useAuth } from "@/lib/auth";
+import {
+  clearMapPrefs,
+  loadMapPrefs,
+  saveMapPrefs,
+  type MapPrefs,
+  type Purpose,
+} from "@/lib/prefs";
 
 type IncomingRequest = {
   id: string;
@@ -21,6 +28,8 @@ type IncomingRequest = {
   from: { id: string; username: string | null };
 };
 
+const PURPOSES: Array<Purpose | "all"> = ["all", "friends", "hangout", "hookup", "social"];
+
 export default function SettingsTab() {
   const { token, user, isHydrated, logout } = useAuth();
   const [incoming, setIncoming] = useState<IncomingRequest[]>([]);
@@ -28,6 +37,20 @@ export default function SettingsTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
+  const [mapPrefs, setMapPrefs] = useState<MapPrefs | null>(null);
+  const [prefsBusy, setPrefsBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function hydratePrefs() {
+      const p = await loadMapPrefs();
+      if (!cancelled) setMapPrefs(p);
+    }
+    void hydratePrefs();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const incomingSorted = useMemo(() => {
     return [...incoming].sort(
@@ -89,7 +112,76 @@ export default function SettingsTab() {
       <ScrollView contentContainerStyle={styles.root}>
         <Text style={styles.header}>Settings</Text>
         <Text style={styles.subheader}>{getAppVersionLabel()}</Text>
-        <AuthForm />
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Account</Text>
+          <Text style={styles.muted}>Login to manage your account.</Text>
+          <View style={{ marginTop: 10 }}>
+            <AuthForm />
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Map preferences</Text>
+          {!mapPrefs ? (
+            <View style={styles.centerInline}>
+              <ActivityIndicator />
+            </View>
+          ) : (
+            <View style={{ gap: 10 }}>
+              <Pressable
+                onPress={async () => {
+                  if (prefsBusy) return;
+                  const idx = PURPOSES.indexOf(mapPrefs.defaultPurposeFilter);
+                  const nextValue = PURPOSES[(idx + 1) % PURPOSES.length] ?? "all";
+                  const next = { ...mapPrefs, defaultPurposeFilter: nextValue };
+                  setPrefsBusy(true);
+                  setMapPrefs(next);
+                  await saveMapPrefs(next);
+                  setPrefsBusy(false);
+                }}
+                style={styles.row}
+              >
+                <Text style={styles.rowLabel}>Default purpose filter</Text>
+                <Text style={styles.rowValue}>{mapPrefs.defaultPurposeFilter}</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={async () => {
+                  if (prefsBusy) return;
+                  const next = { ...mapPrefs, autoFitPeopleOnOpen: !mapPrefs.autoFitPeopleOnOpen };
+                  setPrefsBusy(true);
+                  setMapPrefs(next);
+                  await saveMapPrefs(next);
+                  setPrefsBusy(false);
+                }}
+                style={styles.row}
+              >
+                <Text style={styles.rowLabel}>Auto-zoom to people on open</Text>
+                <Text style={styles.rowValue}>{mapPrefs.autoFitPeopleOnOpen ? "On" : "Off"}</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={async () => {
+                  if (prefsBusy) return;
+                  setPrefsBusy(true);
+                  await clearMapPrefs();
+                  const p = await loadMapPrefs();
+                  setMapPrefs(p);
+                  setPrefsBusy(false);
+                }}
+                style={styles.secondaryAction}
+              >
+                <Text style={styles.secondaryActionText}>Reset map preferences</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Help</Text>
+          <Text style={styles.muted}>If login fails, check your API base URL in mobile/.env.</Text>
+        </View>
       </ScrollView>
     );
   }
@@ -101,6 +193,84 @@ export default function SettingsTab() {
     >
       <Text style={styles.header}>Settings</Text>
       <Text style={styles.subheader}>@{user.username}</Text>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Account</Text>
+        <Text style={styles.name}>@{user.username}</Text>
+        <Text style={styles.preview}>
+          Purpose: {user.purpose}
+          {user.gender ? ` · Gender: ${user.gender}` : ""}
+        </Text>
+
+        <Pressable
+          onPress={() =>
+            Alert.alert("Logout", "Are you sure?", [
+              { text: "Cancel", style: "cancel" },
+              { text: "Logout", style: "destructive", onPress: () => void logout() },
+            ])
+          }
+          style={styles.logoutBtn}
+        >
+          <Text style={styles.logoutText}>Logout</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Map preferences</Text>
+        {!mapPrefs ? (
+          <View style={styles.centerInline}>
+            <ActivityIndicator />
+          </View>
+        ) : (
+          <View style={{ gap: 10 }}>
+            <Pressable
+              onPress={async () => {
+                if (prefsBusy) return;
+                const idx = PURPOSES.indexOf(mapPrefs.defaultPurposeFilter);
+                const nextValue = PURPOSES[(idx + 1) % PURPOSES.length] ?? "all";
+                const next = { ...mapPrefs, defaultPurposeFilter: nextValue };
+                setPrefsBusy(true);
+                setMapPrefs(next);
+                await saveMapPrefs(next);
+                setPrefsBusy(false);
+              }}
+              style={styles.row}
+            >
+              <Text style={styles.rowLabel}>Default purpose filter</Text>
+              <Text style={styles.rowValue}>{mapPrefs.defaultPurposeFilter}</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={async () => {
+                if (prefsBusy) return;
+                const next = { ...mapPrefs, autoFitPeopleOnOpen: !mapPrefs.autoFitPeopleOnOpen };
+                setPrefsBusy(true);
+                setMapPrefs(next);
+                await saveMapPrefs(next);
+                setPrefsBusy(false);
+              }}
+              style={styles.row}
+            >
+              <Text style={styles.rowLabel}>Auto-zoom to people on open</Text>
+              <Text style={styles.rowValue}>{mapPrefs.autoFitPeopleOnOpen ? "On" : "Off"}</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={async () => {
+                if (prefsBusy) return;
+                setPrefsBusy(true);
+                await clearMapPrefs();
+                const p = await loadMapPrefs();
+                setMapPrefs(p);
+                setPrefsBusy(false);
+              }}
+              style={styles.secondaryAction}
+            >
+              <Text style={styles.secondaryActionText}>Reset map preferences</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Friend requests</Text>
@@ -142,17 +312,12 @@ export default function SettingsTab() {
         )}
       </View>
 
-      <Pressable
-        onPress={() =>
-          Alert.alert("Logout", "Are you sure?", [
-            { text: "Cancel", style: "cancel" },
-            { text: "Logout", style: "destructive", onPress: () => void logout() },
-          ])
-        }
-        style={styles.logoutBtn}
-      >
-        <Text style={styles.logoutText}>Logout</Text>
-      </Pressable>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Help</Text>
+        <Text style={styles.muted}>
+          Version: {getAppVersionLabel()}
+        </Text>
+      </View>
     </ScrollView>
   );
 }
@@ -178,6 +343,29 @@ const styles = StyleSheet.create({
   cardTitle: { color: "#e9edef", fontSize: 16, fontWeight: "900", marginBottom: 10 },
   error: { color: "#ffb4b4" },
   muted: { color: "rgba(233,237,239,0.65)" },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  rowLabel: { color: "#e9edef", fontWeight: "900" },
+  rowValue: { color: "rgba(233,237,239,0.65)", fontWeight: "800" },
+  secondaryAction: {
+    alignSelf: "flex-start",
+    borderRadius: 9999,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  secondaryActionText: { color: "#e9edef", fontWeight: "900" },
   requestRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -210,7 +398,7 @@ const styles = StyleSheet.create({
   secondaryBtnText: { color: "#e9edef", fontWeight: "900" },
   btnDisabled: { opacity: 0.6 },
   logoutBtn: {
-    marginTop: 6,
+    marginTop: 12,
     borderRadius: 9999,
     paddingVertical: 12,
     alignItems: "center",
@@ -220,4 +408,3 @@ const styles = StyleSheet.create({
   },
   logoutText: { color: "#e9edef", fontWeight: "900" },
 });
-

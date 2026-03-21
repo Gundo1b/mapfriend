@@ -26,13 +26,18 @@ export const metadata: Metadata = {
   },
 };
 
+const themeInitScript = `(function(){try{var k='mf:theme-pref:v1';var p=localStorage.getItem(k);p=(p==='light'||p==='dark'||p==='system')?p:'system';var mq=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');var dark=(p==='dark')||(p==='system'&&!!mq&&mq.matches);var t=dark?'dark':'light';document.documentElement.dataset.theme=t;try{document.documentElement.style.colorScheme=t;}catch(e){};if(p==='system'&&mq&&mq.addEventListener){mq.addEventListener('change',function(){try{var p2=localStorage.getItem(k);if(p2!=='system')return;var t2=mq.matches?'dark':'light';document.documentElement.dataset.theme=t2;try{document.documentElement.style.colorScheme=t2;}catch(e){}}catch(e){}});}}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className="antialiased">{children}</body>
     </html>
   );

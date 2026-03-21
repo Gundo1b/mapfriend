@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  clearMapPrefs,
+  loadMapPrefs,
+  saveMapPrefs,
+  type MapPrefs,
+  type Purpose,
+} from "../../lib/clientPrefs";
+import { getThemePref, setThemePref, type ThemePref } from "../../lib/clientTheme";
 
 type IncomingRequest = {
   id: string;
@@ -14,11 +22,33 @@ type RespondState = {
   error?: string;
 };
 
+type MeUser = {
+  id: string;
+  username: string;
+  purpose: Purpose;
+  gender?: string | null;
+  avatar_url?: string | null;
+  bio?: string | null;
+};
+
+const PURPOSES: Purpose[] = ["friends", "hangout", "hookup", "social"];
+
 export default function SettingsPage() {
+  const [me, setMe] = useState<MeUser | null>(null);
+  const [meLoading, setMeLoading] = useState(true);
+  const [meError, setMeError] = useState<string | null>(null);
+  const [logoutBusy, setLogoutBusy] = useState(false);
   const [incoming, setIncoming] = useState<IncomingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [responding, setResponding] = useState<Record<string, RespondState>>({});
+  const [mapPrefs, setMapPrefs] = useState<MapPrefs>(() => loadMapPrefs());
+  const [themePref, setThemePrefState] = useState<ThemePref>(() => getThemePref());
+  const [profileDraft, setProfileDraft] = useState<{ avatarUrl: string; bio: string }>({
+    avatarUrl: "",
+    bio: "",
+  });
+  const [profileSave, setProfileSave] = useState<RespondState>({ status: "idle" });
 
   const incomingSorted = useMemo(() => {
     return [...incoming].sort(
@@ -27,7 +57,49 @@ export default function SettingsPage() {
   }, [incoming]);
 
   useEffect(() => {
+    setProfileDraft({
+      avatarUrl: me?.avatar_url ?? "",
+      bio: me?.bio ?? "",
+    });
+    setProfileSave({ status: "idle" });
+  }, [me?.id]);
+
+  useEffect(() => {
+    function onThemeChanged(e: Event) {
+      const detail = (e as CustomEvent<{ pref: ThemePref }> | null)?.detail;
+      if (detail?.pref) setThemePrefState(detail.pref);
+      else setThemePrefState(getThemePref());
+    }
+    window.addEventListener("mf:theme-pref-changed", onThemeChanged as EventListener);
+    return () => {
+      window.removeEventListener("mf:theme-pref-changed", onThemeChanged as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
+
+    async function loadMe() {
+      setMeLoading(true);
+      setMeError(null);
+      try {
+        const res = await fetch("/api/me", { method: "GET" });
+        const data = (await res.json().catch(() => null)) as
+          | { ok: true; user: MeUser | null }
+          | { ok: false; error: string }
+          | null;
+
+        if (!res.ok || !data || !("ok" in data) || !data.ok) {
+          throw new Error((data as { error?: string } | null)?.error || "Failed.");
+        }
+
+        if (!cancelled) setMe(data.user);
+      } catch (e) {
+        if (!cancelled) setMeError(e instanceof Error ? e.message : "Failed.");
+      } finally {
+        if (!cancelled) setMeLoading(false);
+      }
+    }
 
     async function load() {
       setLoading(true);
@@ -56,12 +128,66 @@ export default function SettingsPage() {
       }
     }
 
+    void loadMe();
     void load();
 
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function logout() {
+    if (logoutBusy) return;
+    setLogoutBusy(true);
+    try {
+      const res = await fetch("/api/auth/logout", { method: "POST" });
+      if (!res.ok) return;
+      setMe(null);
+      setIncoming([]);
+      try {
+        window.dispatchEvent(new Event("mf:auth-changed"));
+      } catch {
+        // ignore
+      }
+    } finally {
+      setLogoutBusy(false);
+    }
+  }
+
+  async function saveProfile() {
+    if (!me) return;
+    if (profileSave.status === "sending") return;
+
+    setProfileSave({ status: "sending" });
+    try {
+      const res = await fetch("/api/me", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          avatarUrl: profileDraft.avatarUrl,
+          bio: profileDraft.bio,
+        }),
+      });
+
+      const data = (await res.json().catch(() => null)) as
+        | { ok: true }
+        | { ok: false; error: string }
+        | null;
+
+      if (!res.ok || !data || !("ok" in data) || !data.ok) {
+        throw new Error((data as { error?: string } | null)?.error || "Failed.");
+      }
+
+      const avatarNext = profileDraft.avatarUrl.trim() ? profileDraft.avatarUrl.trim() : null;
+      const bioNext = profileDraft.bio.trim() ? profileDraft.bio.trim() : null;
+      setMe((prev) =>
+        prev ? { ...prev, avatar_url: avatarNext, bio: bioNext } : prev,
+      );
+      setProfileSave({ status: "idle" });
+    } catch (e) {
+      setProfileSave({ status: "error", error: e instanceof Error ? e.message : "Failed." });
+    }
+  }
 
   async function respond(id: string, action: "accept" | "decline") {
     setResponding((prev) => ({ ...prev, [id]: { status: "sending" } }));
@@ -100,22 +226,8 @@ export default function SettingsPage() {
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: "24px 16px 96px",
-        background: "linear-gradient(180deg, #ffffff 0%, #f9fafb 100%)",
-        color: "#111827",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          marginBottom: 10,
-        }}
-      >
+    <main className="mf-page">
+      <div className="mf-headerRow">
         <img
           src="/logo.png"
           alt="MapFriend"
@@ -123,41 +235,236 @@ export default function SettingsPage() {
         />
         <h1 style={{ fontSize: 22, fontWeight: 700 }}>Settings</h1>
       </div>
-      <div
-        style={{
-          marginTop: 16,
-          background: "white",
-          border: "1px solid rgba(0,0,0,0.08)",
-          borderRadius: 16,
-          padding: 14,
-        }}
-      >
-        <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
-          Friend requests
-        </h2>
+
+      <div className="mf-card" style={{ marginTop: 16 }}>
+        <h2 className="mf-cardTitle">Account</h2>
+
+        {meLoading ? (
+          <div className="mf-muted">Loading...</div>
+        ) : meError ? (
+          <div className="mf-error">{meError}</div>
+        ) : !me ? (
+          <div className="mf-muted">Not logged in.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 9999,
+                  overflow: "hidden",
+                  border: "1px solid var(--mf-border)",
+                  background: "var(--mf-surface-2)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flex: "0 0 auto",
+                }}
+                aria-hidden="true"
+                title="Profile photo"
+              >
+                {me.avatar_url ? (
+                  <img
+                    src={me.avatar_url}
+                    alt=""
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                ) : (
+                  <div style={{ fontWeight: 900, color: "var(--mf-muted)" }}>
+                    {me.username.slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ flex: "1 1 auto", minWidth: 220 }}>
+                <div style={{ fontWeight: 900 }}>@{me.username}</div>
+                <div className="mf-muted" style={{ fontSize: 13, marginTop: 2 }}>
+                  Purpose: {me.purpose}
+                  {me.gender ? ` · Gender: ${me.gender}` : ""}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={logout}
+                disabled={logoutBusy}
+                className="mf-btn mf-btnSecondary"
+                style={{
+                  opacity: logoutBusy ? 0.7 : 1,
+                  cursor: logoutBusy ? "not-allowed" : "pointer",
+                }}
+                title="Logout"
+              >
+                Logout
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span className="mf-muted" style={{ fontSize: 13, fontWeight: 700 }}>
+                  Profile photo URL
+                </span>
+                <input
+                  className="mf-input"
+                  value={profileDraft.avatarUrl}
+                  onChange={(e) =>
+                    setProfileDraft((p) => ({ ...p, avatarUrl: e.target.value }))
+                  }
+                  placeholder="https://example.com/me.jpg"
+                  inputMode="url"
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span className="mf-muted" style={{ fontSize: 13, fontWeight: 700 }}>
+                  Bio
+                </span>
+                <textarea
+                  className="mf-textarea"
+                  value={profileDraft.bio}
+                  onChange={(e) =>
+                    setProfileDraft((p) => ({ ...p, bio: e.target.value }))
+                  }
+                  maxLength={280}
+                  placeholder="Say something short about you…"
+                />
+                <div className="mf-muted" style={{ fontSize: 12 }}>
+                  {profileDraft.bio.length}/280
+                </div>
+              </label>
+
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={saveProfile}
+                  disabled={profileSave.status === "sending"}
+                  className="mf-btn mf-btnPrimary"
+                  style={{
+                    opacity: profileSave.status === "sending" ? 0.7 : 1,
+                    cursor: profileSave.status === "sending" ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {profileSave.status === "sending" ? "Saving…" : "Save profile"}
+                </button>
+
+                {profileSave.status === "error" && (
+                  <div className="mf-error" style={{ fontSize: 13 }}>
+                    {profileSave.error || "Failed."}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mf-card" style={{ marginTop: 12 }}>
+        <h2 className="mf-cardTitle">Map preferences</h2>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span className="mf-muted" style={{ fontSize: 13, fontWeight: 700 }}>
+              Default purpose filter
+            </span>
+            <select
+              className="mf-select"
+              value={mapPrefs.defaultPurposeFilter}
+              onChange={(e) => {
+                const next = {
+                  ...mapPrefs,
+                  defaultPurposeFilter: e.target.value as MapPrefs["defaultPurposeFilter"],
+                };
+                setMapPrefs(next);
+                saveMapPrefs(next);
+              }}
+              style={{ height: 40, maxWidth: 360 }}
+            >
+              <option value="all">All purposes</option>
+              {PURPOSES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <input
+              type="checkbox"
+              checked={mapPrefs.autoFitPeopleOnOpen}
+              onChange={(e) => {
+                const next = { ...mapPrefs, autoFitPeopleOnOpen: e.target.checked };
+                setMapPrefs(next);
+                saveMapPrefs(next);
+              }}
+            />
+            <span style={{ fontSize: 14 }}>Auto-zoom to people on open</span>
+          </label>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                clearMapPrefs();
+                setMapPrefs(loadMapPrefs());
+              }}
+              className="mf-btn mf-btnSecondary"
+            >
+              Reset map preferences
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="mf-card" style={{ marginTop: 12 }}>
+        <h2 className="mf-cardTitle">Theming</h2>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span className="mf-muted" style={{ fontSize: 13, fontWeight: 700 }}>
+            Theme
+          </span>
+          <select
+            className="mf-select"
+            value={themePref}
+            onChange={(e) => {
+              const next = e.target.value as ThemePref;
+              setThemePrefState(next);
+              setThemePref(next);
+            }}
+            style={{ height: 40, maxWidth: 360 }}
+          >
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="mf-card" style={{ marginTop: 12 }}>
+        <h2 className="mf-cardTitle">Friend requests</h2>
 
         {loading ? (
-          <div style={{ color: "#6b7280" }}>Loading...</div>
+          <div className="mf-muted">Loading...</div>
         ) : error ? (
-          <div style={{ color: "#b91c1c" }}>{error}</div>
+          <div className="mf-error">{error}</div>
         ) : incomingSorted.length === 0 ? (
-          <div style={{ color: "#6b7280" }}>No pending requests.</div>
+          <div className="mf-muted">No pending requests.</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {incomingSorted.map((req) => (
               <div
                 key={req.id}
                 style={{
-                  border: "1px solid rgba(0,0,0,0.08)",
+                  border: "1px solid var(--mf-border)",
                   borderRadius: 14,
                   padding: 12,
-                  background: "linear-gradient(180deg, #ffffff 0%, #f9fafb 100%)",
+                  background: "var(--mf-surface-2)",
                 }}
               >
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>
                   {req.from.username ?? "Unknown user"}
                 </div>
-                <div style={{ color: "#6b7280", fontSize: 12, marginBottom: 10 }}>
+                <div className="mf-muted" style={{ fontSize: 12, marginBottom: 10 }}>
                   Sent {new Date(req.createdAt).toLocaleString()}
                 </div>
 
@@ -166,14 +473,9 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => respond(req.id, "accept")}
                     disabled={responding[req.id]?.status === "sending"}
+                    className="mf-btn mf-btnPrimary"
                     style={{
                       flex: 1,
-                      background: "#111827",
-                      color: "white",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: 12,
-                      padding: "10px 12px",
-                      fontSize: 14,
                       opacity: responding[req.id]?.status === "sending" ? 0.7 : 1,
                       cursor:
                         responding[req.id]?.status === "sending"
@@ -187,14 +489,9 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => respond(req.id, "decline")}
                     disabled={responding[req.id]?.status === "sending"}
+                    className="mf-btn mf-btnSecondary"
                     style={{
                       flex: 1,
-                      background: "white",
-                      color: "#111827",
-                      border: "1px solid rgba(0,0,0,0.12)",
-                      borderRadius: 12,
-                      padding: "10px 12px",
-                      fontSize: 14,
                       opacity: responding[req.id]?.status === "sending" ? 0.7 : 1,
                       cursor:
                         responding[req.id]?.status === "sending"
@@ -207,7 +504,7 @@ export default function SettingsPage() {
                 </div>
 
                 {responding[req.id]?.status === "error" && (
-                  <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 13 }}>
+                  <div className="mf-error" style={{ marginTop: 8, fontSize: 13 }}>
                     {responding[req.id]?.error || "Failed."}
                   </div>
                 )}
@@ -215,6 +512,22 @@ export default function SettingsPage() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="mf-card" style={{ marginTop: 12 }}>
+        <h2 className="mf-cardTitle">Help</h2>
+        <div className="mf-muted" style={{ fontSize: 14, lineHeight: 1.5 }}>
+          <div>
+            Tips: If location doesn&apos;t work, open this site over HTTPS (or use{" "}
+            <code style={{ fontSize: 13 }}>http://localhost</code>).
+          </div>
+          <div style={{ marginTop: 8 }}>
+            Support:{" "}
+            <a href="mailto:support@example.com" style={{ color: "var(--mf-text)" }}>
+              support@example.com
+            </a>
+          </div>
+        </div>
       </div>
     </main>
   );

@@ -11,6 +11,7 @@ import {
   useMap,
 } from "react-leaflet";
 import { divIcon, latLngBounds, type Map as LeafletMap } from "leaflet";
+import { loadMapPrefs, type MapPrefs } from "./lib/clientPrefs";
 
 type Position = {
   lat: number;
@@ -40,6 +41,8 @@ type SavedLocation = {
   lng: number;
   username?: string | null;
   purpose?: User["purpose"] | null;
+  avatar_url?: string | null;
+  bio?: string | null;
 };
 
 type User = {
@@ -115,12 +118,19 @@ function MapRefSetter({ onMap }: { onMap: (map: LeafletMap) => void }) {
 }
 
 export function Map() {
+  const initialPrefs = useMemo(() => loadMapPrefs(), []);
   const [map, setMap] = useState<LeafletMap | null>(null);
   const [position, setPosition] = useState<Position | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(true);
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
-  const [purposeFilter, setPurposeFilter] = useState<User["purpose"] | "all">("all");
+  const [mapPrefs, setMapPrefs] = useState<MapPrefs>(initialPrefs);
+  const [purposeFilter, setPurposeFilter] = useState<User["purpose"] | "all">(
+    initialPrefs.defaultPurposeFilter,
+  );
+  const [autoFitPeopleOnOpen, setAutoFitPeopleOnOpen] = useState<boolean>(
+    initialPrefs.autoFitPeopleOnOpen,
+  );
   const [user, setUser] = useState<User | null>(null);
   const [friendRequests, setFriendRequests] = useState<Record<string, FriendRequestEntry>>(
     {},
@@ -140,6 +150,21 @@ export function Map() {
     null,
   );
   const locationSendInFlightRef = useRef(false);
+
+  useEffect(() => {
+    function onPrefsChanged(e: Event) {
+      const next = (e as CustomEvent<MapPrefs> | null)?.detail ?? loadMapPrefs();
+      setMapPrefs(next);
+      setPurposeFilter(next.defaultPurposeFilter);
+      setAutoFitPeopleOnOpen(next.autoFitPeopleOnOpen);
+      if (next.autoFitPeopleOnOpen) setHasAutoFitted(false);
+    }
+
+    window.addEventListener("mf:map-prefs-changed", onPrefsChanged as EventListener);
+    return () => {
+      window.removeEventListener("mf:map-prefs-changed", onPrefsChanged as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     if (!window.isSecureContext) {
@@ -350,10 +375,11 @@ export function Map() {
   }, [purposeFilter, savedLocations]);
 
   useEffect(() => {
+    if (!autoFitPeopleOnOpen) return;
     if (!map || hasAutoFitted || filteredLocations.length === 0) return;
     fitVisiblePeople();
     setHasAutoFitted(true);
-  }, [filteredLocations.length, hasAutoFitted, map]);
+  }, [autoFitPeopleOnOpen, filteredLocations.length, hasAutoFitted, map]);
 
   async function submitAuth() {
     setIsAuthSubmitting(true);
@@ -555,27 +581,73 @@ export function Map() {
             })}
           >
             <Popup>
-              {loc.username?.trim() ? loc.username : "a"}
-              {loc.purpose ? (
-                <>
-                  <br />
-                  <span
-                    style={{
-                      display: "inline-block",
-                      marginTop: 6,
-                      padding: "2px 8px",
-                      borderRadius: 9999,
-                      border: `1px solid ${PURPOSE_COLORS[loc.purpose].badgeBorder}`,
-                      background: PURPOSE_COLORS[loc.purpose].badgeBg,
-                      color: PURPOSE_COLORS[loc.purpose].badgeText,
-                      fontSize: 12,
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    {loc.purpose}
-                  </span>
-                </>
-              ) : null}
+              <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 220 }}>
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 9999,
+                    overflow: "hidden",
+                    border: "1px solid var(--mf-border)",
+                    background: "var(--mf-surface-2)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flex: "0 0 auto",
+                  }}
+                  aria-hidden="true"
+                  title="Profile photo"
+                >
+                  {loc.avatar_url ? (
+                    <img
+                      src={loc.avatar_url}
+                      alt=""
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <div style={{ fontWeight: 900, color: "var(--mf-muted)" }}>
+                      {(loc.username?.trim() ? loc.username : "U").slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 900 }}>
+                    {loc.username?.trim() ? loc.username : "Unknown"}
+                  </div>
+                  {loc.bio?.trim() ? (
+                    <div
+                      style={{
+                        color: "var(--mf-muted)",
+                        fontSize: 12,
+                        marginTop: 2,
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {loc.bio}
+                    </div>
+                  ) : null}
+
+                  {loc.purpose ? (
+                    <div style={{ marginTop: 6 }}>
+                      <span
+                        style={{
+                          display: "inline-block",
+                          padding: "2px 8px",
+                          borderRadius: 9999,
+                          border: `1px solid ${PURPOSE_COLORS[loc.purpose].badgeBorder}`,
+                          background: PURPOSE_COLORS[loc.purpose].badgeBg,
+                          color: PURPOSE_COLORS[loc.purpose].badgeText,
+                          fontSize: 12,
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {loc.purpose}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
               {loc.username?.trim() &&
               (!user || loc.username.trim() !== user.username) &&
               !friends.has(loc.username.trim().toLowerCase()) ? (
@@ -589,9 +661,9 @@ export function Map() {
                     }
                     style={{
                       width: "100%",
-                      background: "#111827",
-                      color: "white",
-                      border: "1px solid rgba(255,255,255,0.08)",
+                      background: "var(--mf-primary)",
+                      color: "var(--mf-primary-text)",
+                      border: "1px solid var(--mf-border)",
                       borderRadius: 10,
                       padding: "8px 10px",
                       fontSize: 13,
@@ -616,7 +688,7 @@ export function Map() {
                           : "Login to add friend"}
                   </button>
                   {friendRequests[loc.username.trim()]?.status === "error" && (
-                    <div style={{ marginTop: 6, color: "#b91c1c", fontSize: 12 }}>
+                    <div style={{ marginTop: 6, color: "var(--mf-danger)", fontSize: 12 }}>
                       {friendRequests[loc.username.trim()]?.error || "Failed."}
                     </div>
                   )}
@@ -641,12 +713,12 @@ export function Map() {
           <div
             style={{
               display: "inline-block",
-              background: "rgba(255,255,255,0.9)",
-              border: "1px solid rgba(0,0,0,0.08)",
+              background: "var(--mf-surface)",
+              border: "1px solid var(--mf-border)",
               borderRadius: 10,
               padding: "10px 12px",
               fontSize: 14,
-              color: "#111827",
+              color: "var(--mf-text)",
             }}
           >
             {error ? `Location error: ${error}` : "Getting your location…"}
@@ -661,9 +733,9 @@ export function Map() {
           className="control"
           aria-hidden="true"
           style={{
-            background: "rgba(255,255,255,0.95)",
-            color: "#111827",
-            border: "1px solid rgba(0,0,0,0.10)",
+            background: "var(--mf-surface)",
+            color: "var(--mf-text)",
+            border: "1px solid var(--mf-border)",
             borderRadius: 9999,
             padding: 6,
             height: 40,
@@ -687,9 +759,9 @@ export function Map() {
           onClick={fitVisiblePeople}
           disabled={filteredLocations.length === 0 || !map}
           style={{
-            background: "rgba(255,255,255,0.95)",
-            color: "#111827",
-            border: "1px solid rgba(0,0,0,0.10)",
+            background: "var(--mf-surface)",
+            color: "var(--mf-text)",
+            border: "1px solid var(--mf-border)",
             borderRadius: 9999,
             padding: "10px 12px",
             fontSize: 14,
@@ -716,9 +788,9 @@ export function Map() {
           value={purposeFilter}
           onChange={(e) => setPurposeFilter(e.target.value as User["purpose"] | "all")}
           style={{
-            background: "rgba(255,255,255,0.95)",
-            color: "#111827",
-            border: "1px solid rgba(0,0,0,0.10)",
+            background: "var(--mf-surface)",
+            color: "var(--mf-text)",
+            border: "1px solid var(--mf-border)",
             borderRadius: 9999,
             padding: "10px 12px",
             fontSize: 14,
@@ -899,9 +971,10 @@ export function Map() {
                     width: "100%",
                     padding: "10px 12px",
                     borderRadius: 12,
-                    border: "1px solid rgba(0,0,0,0.12)",
+                    border: "1px solid var(--mf-border-strong)",
                     marginBottom: 12,
-                    background: "white",
+                    background: "var(--mf-surface)",
+                    color: "var(--mf-text)",
                   }}
                 >
                   {PURPOSES.map((p) => (
@@ -914,7 +987,7 @@ export function Map() {
             )}
 
             {authError && (
-              <div style={{ color: "#b91c1c", fontSize: 13, marginBottom: 10 }}>
+              <div style={{ color: "var(--mf-danger)", fontSize: 13, marginBottom: 10 }}>
                 {authError}
               </div>
             )}
@@ -925,9 +998,9 @@ export function Map() {
               disabled={isAuthSubmitting}
               style={{
                 width: "100%",
-                background: "#111827",
-                color: "white",
-                border: "1px solid rgba(255,255,255,0.08)",
+                background: "var(--mf-primary)",
+                color: "var(--mf-primary-text)",
+                border: "1px solid var(--mf-border)",
                 borderRadius: 12,
                 padding: "10px 12px",
                 fontSize: 14,

@@ -1,18 +1,109 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --mf-bg: #ffffff;
+  --mf-surface: #ffffff;
+  --mf-surface-2: #f9fafb;
+  --mf-text: #111827;
+  --mf-muted: #6b7280;
+  --mf-border: rgba(0, 0, 0, 0.10);
+  --mf-border-strong: rgba(0, 0, 0, 0.14);
+  --mf-primary: #111827;
+  --mf-primary-text: #ffffff;
+  --mf-danger: #b91c1c;
+}
+
+:root[data-theme="dark"] {
+  --mf-bg: #0b141a;
+  --mf-surface: rgba(17, 27, 33, 0.92);
+  --mf-surface-2: rgba(255, 255, 255, 0.04);
+  --mf-text: #e9edef;
+  --mf-muted: rgba(233, 237, 239, 0.65);
+  --mf-border: rgba(255, 255, 255, 0.10);
+  --mf-border-strong: rgba(255, 255, 255, 0.16);
+  --mf-primary: #00a884;
+  --mf-primary-text: #052b24;
+  --mf-danger: #ffb4b4;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--mf-bg);
+  --color-foreground: var(--mf-text);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--mf-bg);
+  color: var(--mf-text);
   font-family: Arial, Helvetica, sans-serif;
   margin: 0;
+}
+
+.mf-page {
+  min-height: 100vh;
+  padding: 24px 16px 96px;
+  background: var(--mf-bg);
+  color: var(--mf-text);
+}
+
+.mf-headerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.mf-card {
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.mf-cardTitle {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 10px 0;
+}
+
+.mf-muted {
+  color: var(--mf-muted);
+}
+
+.mf-error {
+  color: var(--mf-danger);
+}
+
+.mf-btn {
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.mf-btnPrimary {
+  background: var(--mf-primary);
+  color: var(--mf-primary-text);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mf-btnSecondary {
+  background: transparent;
+  color: var(--mf-text);
+  border: 1px solid var(--mf-border-strong);
+}
+
+.mf-input,
+.mf-textarea,
+.mf-select {
+  background: transparent;
+  color: var(--mf-text);
+  border: 1px solid var(--mf-border-strong);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.mf-textarea {
+  min-height: 96px;
+  resize: vertical;
 }

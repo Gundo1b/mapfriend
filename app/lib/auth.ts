@@ -10,6 +10,8 @@ type User = {
   username: string;
   purpose: "friends" | "hangout" | "hookup" | "social";
   gender?: string | null;
+  avatar_url?: string | null;
+  bio?: string | null;
 };
 
 export function hashPassword(password: string) {
@@ -96,20 +98,58 @@ async function getUserForSessionToken(token: string): Promise<User | null> {
   if (sessionError || !session) return null;
   if (new Date(session.expires_at).getTime() < Date.now()) return null;
 
-  const { data: user, error: userError } = await supabase
+  const selectWithProfile = "id,username,purpose,gender,avatar_url,bio";
+  const selectCore = "id,username,purpose,gender";
+
+  const withProfile = await supabase
     .from("users")
-    .select("id,username,purpose,gender")
+    .select(selectWithProfile)
     .eq("id", session.user_id)
     .maybeSingle();
 
-  if (userError || !user) return null;
+  if (!withProfile.error && withProfile.data) {
+    const user = withProfile.data as unknown as {
+      id: string;
+      username: string;
+      purpose: User["purpose"];
+      gender?: string | null;
+      avatar_url?: string | null;
+      bio?: string | null;
+    };
+    return {
+      id: user.id,
+      username: user.username,
+      purpose: user.purpose,
+      gender: user.gender ?? null,
+      avatar_url: user.avatar_url ?? null,
+      bio: user.bio ?? null,
+    } satisfies User;
+  }
+
+  // Back-compat: older DB schema may not have `avatar_url`/`bio`.
+  const core = await supabase
+    .from("users")
+    .select(selectCore)
+    .eq("id", session.user_id)
+    .maybeSingle();
+
+  if (core.error || !core.data) return null;
+
+  const user = core.data as unknown as {
+    id: string;
+    username: string;
+    purpose: User["purpose"];
+    gender?: string | null;
+  };
 
   return {
     id: user.id,
     username: user.username,
     purpose: user.purpose,
-    gender: (user as unknown as { gender?: string | null }).gender ?? null,
-  } as User;
+    gender: user.gender ?? null,
+    avatar_url: null,
+    bio: null,
+  } satisfies User;
 }
 
 export async function getSessionUser(request?: Request): Promise<User | null> {
