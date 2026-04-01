@@ -22,6 +22,12 @@ type RespondState = {
   error?: string;
 };
 
+type ProfileDraft = {
+  avatarFile: File | null;
+  avatarPreviewUrl: string;
+  bio: string;
+};
+
 type MeUser = {
   id: string;
   username: string;
@@ -44,8 +50,9 @@ export default function SettingsPage() {
   const [responding, setResponding] = useState<Record<string, RespondState>>({});
   const [mapPrefs, setMapPrefs] = useState<MapPrefs>(() => loadMapPrefs());
   const [themePref, setThemePrefState] = useState<ThemePref>(() => getThemePref());
-  const [profileDraft, setProfileDraft] = useState<{ avatarUrl: string; bio: string }>({
-    avatarUrl: "",
+  const [profileDraft, setProfileDraft] = useState<ProfileDraft>({
+    avatarFile: null,
+    avatarPreviewUrl: "",
     bio: "",
   });
   const [profileSave, setProfileSave] = useState<RespondState>({ status: "idle" });
@@ -58,7 +65,8 @@ export default function SettingsPage() {
 
   useEffect(() => {
     setProfileDraft({
-      avatarUrl: me?.avatar_url ?? "",
+      avatarFile: null,
+      avatarPreviewUrl: me?.avatar_url ?? "",
       bio: me?.bio ?? "",
     });
     setProfileSave({ status: "idle" });
@@ -160,14 +168,24 @@ export default function SettingsPage() {
 
     setProfileSave({ status: "sending" });
     try {
-      const res = await fetch("/api/me", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          avatarUrl: profileDraft.avatarUrl,
-          bio: profileDraft.bio,
-        }),
-      });
+      let res: Response;
+      if (profileDraft.avatarFile) {
+        const formData = new FormData();
+        formData.append("bio", profileDraft.bio);
+        formData.append("avatarFile", profileDraft.avatarFile);
+        res = await fetch("/api/me", {
+          method: "PATCH",
+          body: formData,
+        });
+      } else {
+        res = await fetch("/api/me", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            bio: profileDraft.bio,
+          }),
+        });
+      }
 
       const data = (await res.json().catch(() => null)) as
         | { ok: true }
@@ -178,12 +196,14 @@ export default function SettingsPage() {
         throw new Error((data as { error?: string } | null)?.error || "Failed.");
       }
 
-      const avatarNext = profileDraft.avatarUrl.trim() ? profileDraft.avatarUrl.trim() : null;
       const bioNext = profileDraft.bio.trim() ? profileDraft.bio.trim() : null;
       setMe((prev) =>
-        prev ? { ...prev, avatar_url: avatarNext, bio: bioNext } : prev,
+        prev ? { ...prev, avatar_url: profileDraft.avatarPreviewUrl || prev.avatar_url, bio: bioNext } : prev,
       );
       setProfileSave({ status: "idle" });
+      if (profileDraft.avatarFile) {
+        setProfileDraft((prev) => ({ ...prev, avatarFile: null }));
+      }
     } catch (e) {
       setProfileSave({ status: "error", error: e instanceof Error ? e.message : "Failed." });
     }
@@ -264,7 +284,13 @@ export default function SettingsPage() {
                 aria-hidden="true"
                 title="Profile photo"
               >
-                {me.avatar_url ? (
+                {profileDraft.avatarPreviewUrl ? (
+                  <img
+                    src={profileDraft.avatarPreviewUrl}
+                    alt=""
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                ) : me.avatar_url ? (
                   <img
                     src={me.avatar_url}
                     alt=""
@@ -301,19 +327,35 @@ export default function SettingsPage() {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <span className="mf-muted" style={{ fontSize: 13, fontWeight: 700 }}>
-                  Profile photo URL
+                  Profile photo
                 </span>
                 <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
                   className="mf-input"
-                  value={profileDraft.avatarUrl}
-                  onChange={(e) =>
-                    setProfileDraft((p) => ({ ...p, avatarUrl: e.target.value }))
-                  }
-                  placeholder="https://example.com/me.jpg"
-                  inputMode="url"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    if (file) {
+                      const previewUrl = URL.createObjectURL(file);
+                      setProfileDraft((prev) => {
+                        if (prev.avatarFile && prev.avatarPreviewUrl.startsWith("blob:")) {
+                          URL.revokeObjectURL(prev.avatarPreviewUrl);
+                        }
+                        return {
+                          ...prev,
+                          avatarFile: file,
+                          avatarPreviewUrl: previewUrl,
+                        };
+                      });
+                    }
+                  }}
                 />
+                <div className="mf-muted" style={{ fontSize: 12 }}>
+                  Take or choose a photo from your device.
+                </div>
               </label>
 
               <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>

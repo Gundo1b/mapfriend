@@ -46,11 +46,28 @@ export async function PATCH(request: Request) {
     );
   }
 
-  let payload: PatchPayload;
+  let payload: PatchPayload | null = null;
+  let avatarFile: File | null = null;
+
   try {
-    payload = (await request.json()) as PatchPayload;
+    const contentType = request.headers.get("content-type") ?? "";
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      payload = {
+        gender: formData.get("gender")?.toString(),
+        avatarUrl: formData.get("avatarUrl")?.toString(),
+        avatar_url: formData.get("avatar_url")?.toString(),
+        bio: formData.get("bio")?.toString(),
+      };
+      const avatar = formData.get("avatarFile");
+      if (avatar instanceof File) {
+        avatarFile = avatar;
+      }
+    } else {
+      payload = (await request.json()) as PatchPayload;
+    }
   } catch {
-    return Response.json({ ok: false, error: "Invalid JSON body." }, { status: 400 });
+    return Response.json({ ok: false, error: "Invalid request body." }, { status: 400 });
   }
 
   const genderValue = typeof payload?.gender === "string" ? payload.gender.trim() : undefined;
@@ -66,7 +83,44 @@ export async function PATCH(request: Request) {
     updates.gender = genderValue;
   }
 
-  if (typeof avatarUrl !== "undefined") {
+  if (avatarFile) {
+    const bucket = "avatars";
+    const filename = `${user.id}-${Date.now()}-${avatarFile.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    let { error: uploadError } = await supabase
+      .storage
+      .from(bucket)
+      .upload(filename, avatarFile, { upsert: true });
+
+    if (uploadError) {
+      const shouldCreateBucket =
+        uploadError.status === 404 ||
+        uploadError.message?.toLowerCase().includes("bucket not found") ||
+        uploadError.message?.toLowerCase().includes("not found");
+
+      if (shouldCreateBucket) {
+        const { error: createError } = await supabase.storage.createBucket(bucket, { public: true });
+        if (createError && createError.status !== 409) {
+          return Response.json(
+            { ok: false, error: createError.message || "Failed to create avatar bucket." },
+            { status: 500 },
+          );
+        }
+        const result = await supabase.storage.from(bucket).upload(filename, avatarFile, { upsert: true });
+        uploadError = result.error;
+      }
+    }
+
+    if (uploadError) {
+      return Response.json({ ok: false, error: uploadError.message || "Avatar upload failed." }, { status: 500 });
+    }
+
+    const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filename);
+    if (!publicUrlData?.publicUrl) {
+      return Response.json({ ok: false, error: "Failed to generate public avatar URL." }, { status: 500 });
+    }
+
+    updates.avatar_url = publicUrlData.publicUrl;
+  } else if (typeof avatarUrl !== "undefined") {
     if (avatarUrl === null) {
       updates.avatar_url = null;
     } else {

@@ -1,16 +1,6 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Circle,
-  CircleMarker,
-  MapContainer,
-  Marker,
-  Popup,
-  TileLayer,
-  useMap,
-} from "react-leaflet";
-import { divIcon, latLngBounds, type Map as LeafletMap } from "leaflet";
 import { loadMapPrefs, type MapPrefs } from "./lib/clientPrefs";
 
 type Position = {
@@ -18,23 +8,6 @@ type Position = {
   lng: number;
   accuracy?: number;
 };
-
-const LOCATION_UPDATE_MIN_METERS = 50;
-const LOCATION_UPDATE_MIN_MS = 30_000;
-const LOCATION_UPDATE_MAX_ACCURACY_METERS = 200;
-
-function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
-  // Haversine
-  const R = 6_371_000;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const lat1 = (a.lat * Math.PI) / 180;
-  const lat2 = (b.lat * Math.PI) / 180;
-  const sinDLat = Math.sin(dLat / 2);
-  const sinDLng = Math.sin(dLng / 2);
-  const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
-}
 
 type SavedLocation = {
   lat: number;
@@ -107,19 +80,31 @@ const DEFAULT_COLORS = {
   badgeText: "#6b7280",
 };
 
-function MapRefSetter({ onMap }: { onMap: (map: LeafletMap) => void }) {
-  const map = useMap();
+const LOCATION_UPDATE_MIN_METERS = 50;
+const LOCATION_UPDATE_MIN_MS = 30_000;
+const LOCATION_UPDATE_MAX_ACCURACY_METERS = 200;
 
-  useEffect(() => {
-    onMap(map);
-  }, [map, onMap]);
+function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6_371_000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+  const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
 
-  return null;
+function formatDistance(distanceMeters: number) {
+  if (distanceMeters < 1000) {
+    return `${Math.round(distanceMeters)} m away`;
+  }
+  return `${(distanceMeters / 1000).toFixed(1)} km away`;
 }
 
 export function Map() {
   const initialPrefs = useMemo(() => loadMapPrefs(), []);
-  const [map, setMap] = useState<LeafletMap | null>(null);
   const [position, setPosition] = useState<Position | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(true);
@@ -128,27 +113,23 @@ export function Map() {
   const [purposeFilter, setPurposeFilter] = useState<User["purpose"] | "all">(
     initialPrefs.defaultPurposeFilter,
   );
-  const [autoFitPeopleOnOpen, setAutoFitPeopleOnOpen] = useState<boolean>(
-    initialPrefs.autoFitPeopleOnOpen,
-  );
   const [user, setUser] = useState<User | null>(null);
-  const [friendRequests, setFriendRequests] = useState<Record<string, FriendRequestEntry>>(
-    {},
-  );
+  const [friendRequests, setFriendRequests] = useState<Record<string, FriendRequestEntry>>({});
   const [friends, setFriends] = useState<Set<string>>(new Set());
+  const [selectedProfile, setSelectedProfile] = useState<SavedLocation | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"register" | "login">("register");
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authPurpose, setAuthPurpose] = useState<User["purpose"]>("friends");
+  const [authBio, setAuthBio] = useState("");
+  const [authAvatarFile, setAuthAvatarFile] = useState<File | null>(null);
+  const [authAvatarPreview, setAuthAvatarPreview] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
-  const [hasAutoFitted, setHasAutoFitted] = useState(false);
 
-  const lastLocationSentRef = useRef<{ lat: number; lng: number; at: number } | null>(
-    null,
-  );
+  const lastLocationSentRef = useRef<{ lat: number; lng: number; at: number } | null>(null);
   const locationSendInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -156,8 +137,6 @@ export function Map() {
       const next = (e as CustomEvent<MapPrefs> | null)?.detail ?? loadMapPrefs();
       setMapPrefs(next);
       setPurposeFilter(next.defaultPurposeFilter);
-      setAutoFitPeopleOnOpen(next.autoFitPeopleOnOpen);
-      if (next.autoFitPeopleOnOpen) setHasAutoFitted(false);
     }
 
     window.addEventListener("mf:map-prefs-changed", onPrefsChanged as EventListener);
@@ -214,8 +193,6 @@ export function Map() {
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
     };
   }, []);
-
-  const initialCenter = useMemo<[number, number]>(() => [0, 0], []);
 
   useEffect(() => {
     if (!position || hasCheckedAuth) return;
@@ -337,7 +314,6 @@ export function Map() {
     async function save() {
       try {
         locationSendInFlightRef.current = true;
-        // Optimistic timestamping to avoid bursts while a request is in-flight.
         lastLocationSentRef.current = {
           lat: currentPosition.lat,
           lng: currentPosition.lng,
@@ -374,13 +350,6 @@ export function Map() {
     return savedLocations.filter((l) => l.purpose === purposeFilter);
   }, [purposeFilter, savedLocations]);
 
-  useEffect(() => {
-    if (!autoFitPeopleOnOpen) return;
-    if (!map || hasAutoFitted || filteredLocations.length === 0) return;
-    fitVisiblePeople();
-    setHasAutoFitted(true);
-  }, [autoFitPeopleOnOpen, filteredLocations.length, hasAutoFitted, map]);
-
   async function submitAuth() {
     setIsAuthSubmitting(true);
     setAuthError(null);
@@ -389,41 +358,59 @@ export function Map() {
       const endpoint =
         authMode === "register" ? "/api/auth/register" : "/api/auth/login";
 
-      if (authMode === "register" && !position) {
-        throw new Error("Location is required to register.");
+      if (authMode === "register") {
+        if (!position) {
+          throw new Error("Location is required to register.");
+        }
+        if (!authBio.trim()) {
+          throw new Error("Bio is required to register.");
+        }
+        if (!authAvatarFile) {
+          throw new Error("Profile photo is required to register.");
+        }
       }
 
-      const payload =
-        authMode === "register"
-          ? {
-              username: authUsername.trim(),
-              password: authPassword,
-              purpose: authPurpose,
-              location: position
-                ? {
-                    lat: position.lat,
-                    lng: position.lng,
-                    accuracy: position.accuracy,
-                  }
-                : undefined,
-            }
-          : {
-              username: authUsername.trim(),
-              password: authPassword,
-              location: position
-                ? {
-                    lat: position.lat,
-                    lng: position.lng,
-                    accuracy: position.accuracy,
-                  }
-                : undefined,
-            };
+      let res: Response;
 
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      if (authMode === "register") {
+        const formData = new FormData();
+        formData.append("username", authUsername.trim());
+        formData.append("password", authPassword);
+        formData.append("purpose", authPurpose);
+        formData.append("bio", authBio.trim());
+        formData.append("avatarFile", authAvatarFile as File);
+
+        if (position) {
+          formData.append("lat", String(position.lat));
+          formData.append("lng", String(position.lng));
+          if (typeof position.accuracy === "number") {
+            formData.append("accuracy", String(position.accuracy));
+          }
+        }
+
+        res = await fetch(endpoint, {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        const payload = {
+          username: authUsername.trim(),
+          password: authPassword,
+          location: position
+            ? {
+                lat: position.lat,
+                lng: position.lng,
+                accuracy: position.accuracy,
+              }
+            : undefined,
+        };
+
+        res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
 
       const data = (await res.json().catch(() => null)) as
         | { ok: true; user: User }
@@ -437,6 +424,9 @@ export function Map() {
       setUser(data.user);
       setAuthOpen(false);
       setAuthPassword("");
+      setAuthBio("");
+      setAuthAvatarFile(null);
+      setAuthAvatarPreview("");
       try {
         window.dispatchEvent(new Event("mf:auth-changed"));
       } catch {
@@ -494,366 +484,340 @@ export function Map() {
     }
   }
 
-  function fitVisiblePeople() {
-    if (!map || filteredLocations.length === 0) return;
-
-    const points = filteredLocations.map((l) => [l.lat, l.lng] as [number, number]);
-    const bounds = latLngBounds(points);
-    map.fitBounds(bounds, { padding: [40, 40] });
-  }
-
   return (
-    <div style={{ height: "100vh", width: "100vw", position: "relative" }}>
-      <MapContainer
-        center={initialCenter}
-        zoom={2}
-        scrollWheelZoom
-        style={{ height: "100%", width: "100%" }}
-      >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"
-          subdomains="abcd"
-          maxZoom={20}
-        />
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png"
-          subdomains="abcd"
-          maxZoom={20}
-        />
+    <div style={{ minHeight: "100vh", width: "100%", background: "var(--mf-surface)", color: "var(--mf-text)" }}>
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px 40px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-end", gap: 16, marginBottom: 24 }}>
+          <div style={{ minWidth: 0 }}>
+            
+            
+            
+          </div>
 
-        <MapRefSetter onMap={setMap} />
-
-        {position && (
-          <>
-            {typeof position.accuracy === "number" && (
-              <Circle
-                center={[position.lat, position.lng]}
-                radius={position.accuracy}
-                pathOptions={{ color: "#2563eb", fillColor: "#60a5fa" }}
-              />
-            )}
-            <CircleMarker
-              center={[position.lat, position.lng]}
-              radius={7}
-              pathOptions={{ color: "#1d4ed8", fillColor: "#3b82f6" }}
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flex: "0 0 auto" }}>
+            <label htmlFor="purposeFilter" style={{ color: "var(--mf-muted)", fontSize: 13, whiteSpace: "nowrap" }}>
+              Filter:
+            </label>
+            <select
+              id="purposeFilter"
+              value={purposeFilter}
+              onChange={(e) => setPurposeFilter(e.target.value as User["purpose"] | "all")}
+              style={{
+                minWidth: 160,
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid var(--mf-border)",
+                background: "var(--mf-surface)",
+                color: "var(--mf-text)",
+                fontSize: 14,
+              }}
             >
-              <Popup>
-                You are here
-                <br />
-                {position.lat.toFixed(6)}, {position.lng.toFixed(6)}
-              </Popup>
-            </CircleMarker>
-          </>
-        )}
+              <option value="all">All purposes</option>
+              {PURPOSES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
-        {filteredLocations.map((loc, idx) => (
-          <Marker
-            key={`${loc.lat},${loc.lng},${idx}`}
-            position={[loc.lat, loc.lng]}
-            icon={divIcon({
-              className: "",
-              html: `
-                <div style="display:flex; flex-direction:column; align-items:center; transform: translateY(-6px);">
-                  <div style="font-size:12px; line-height:1; padding:3px 6px; border-radius:10px; background:rgba(255,255,255,0.95); border:1px solid rgba(0,0,0,0.10); color:#111827; white-space:nowrap;">
-                    ${escapeHtml(loc.username?.trim() ? loc.username : "a")}
-                  </div>
-                  ${
-                    loc.purpose
-                      ? `<div style="font-size:11px; line-height:1; margin-top:3px; padding:2px 6px; border-radius:9999px; background:${
-                          (PURPOSE_COLORS[loc.purpose] ?? DEFAULT_COLORS).badgeBg
-                        }; border:1px solid ${
-                          (PURPOSE_COLORS[loc.purpose] ?? DEFAULT_COLORS).badgeBorder
-                        }; color:${
-                          (PURPOSE_COLORS[loc.purpose] ?? DEFAULT_COLORS).badgeText
-                        }; white-space:nowrap;">${escapeHtml(loc.purpose)}</div>`
-                      : ""
-                  }
-                  <div style="width:12px; height:12px; margin-top:4px; border-radius:9999px; background:${
-                    (loc.purpose ? PURPOSE_COLORS[loc.purpose] : DEFAULT_COLORS).dot
-                  }; border:2px solid ${
-                    (loc.purpose ? PURPOSE_COLORS[loc.purpose] : DEFAULT_COLORS).dotBorder
-                  };"></div>
-                </div>
-              `,
-              iconSize: [140, 56],
-              iconAnchor: [70, 48],
-            })}
-          >
-            <Popup>
-              <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 220 }}>
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 9999,
-                    overflow: "hidden",
-                    border: "1px solid var(--mf-border)",
-                    background: "var(--mf-surface-2)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flex: "0 0 auto",
-                  }}
-                  aria-hidden="true"
-                  title="Profile photo"
-                >
-                  {loc.avatar_url ? (
-                    <img
-                      src={loc.avatar_url}
-                      alt=""
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  ) : (
-                    <div style={{ fontWeight: 900, color: "var(--mf-muted)" }}>
-                      {(loc.username?.trim() ? loc.username : "U").slice(0, 1).toUpperCase()}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 900 }}>
-                    {loc.username?.trim() ? loc.username : "Unknown"}
-                  </div>
-                  {loc.bio?.trim() ? (
-                    <div
-                      style={{
-                        color: "var(--mf-muted)",
-                        fontSize: 12,
-                        marginTop: 2,
-                        lineHeight: 1.3,
-                      }}
-                    >
-                      {loc.bio}
-                    </div>
-                  ) : null}
-
-                  {loc.purpose ? (
-                    <div style={{ marginTop: 6 }}>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          padding: "2px 8px",
-                          borderRadius: 9999,
-                          border: `1px solid ${PURPOSE_COLORS[loc.purpose].badgeBorder}`,
-                          background: PURPOSE_COLORS[loc.purpose].badgeBg,
-                          color: PURPOSE_COLORS[loc.purpose].badgeText,
-                          fontSize: 12,
-                          lineHeight: 1.2,
-                        }}
-                      >
-                        {loc.purpose}
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              {loc.username?.trim() &&
-              (!user || loc.username.trim() !== user.username) &&
-              !friends.has(loc.username.trim().toLowerCase()) ? (
-                <div style={{ marginTop: 10, minWidth: 160 }}>
-                  <button
-                    type="button"
-                    onClick={() => sendFriendRequest(loc.username as string)}
-                    disabled={
-                      friendRequests[loc.username.trim()]?.status === "sending" ||
-                      friendRequests[loc.username.trim()]?.status === "sent"
-                    }
-                    style={{
-                      width: "100%",
-                      background: "var(--mf-primary)",
-                      color: "var(--mf-primary-text)",
-                      border: "1px solid var(--mf-border)",
-                      borderRadius: 10,
-                      padding: "8px 10px",
-                      fontSize: 13,
-                      opacity:
-                        friendRequests[loc.username.trim()]?.status === "sending" ||
-                        friendRequests[loc.username.trim()]?.status === "sent"
-                          ? 0.7
-                          : 1,
-                      cursor:
-                        friendRequests[loc.username.trim()]?.status === "sending" ||
-                        friendRequests[loc.username.trim()]?.status === "sent"
-                          ? "not-allowed"
-                          : "pointer",
-                    }}
-                  >
-                    {friendRequests[loc.username.trim()]?.status === "sending"
-                      ? "Sending..."
-                      : friendRequests[loc.username.trim()]?.status === "sent"
-                        ? "Request sent"
-                        : user
-                          ? "Send friend request"
-                          : "Login to add friend"}
-                  </button>
-                  {friendRequests[loc.username.trim()]?.status === "error" && (
-                    <div style={{ marginTop: 6, color: "var(--mf-danger)", fontSize: 12 }}>
-                      {friendRequests[loc.username.trim()]?.error || "Failed."}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </Popup>
-          </Marker>
-        ))}
-      </MapContainer>
-
-      {(isLocating || error) && (
-        <div
-          style={{
-            position: "absolute",
-            top: 12,
-            left: 12,
-            right: 12,
-            zIndex: 1000,
-            pointerEvents: "none",
-          }}
-        >
+        {(isLocating || error) && (
           <div
             style={{
-              display: "inline-block",
-              background: "var(--mf-surface)",
+              marginBottom: 20,
+              padding: 16,
+              borderRadius: 18,
               border: "1px solid var(--mf-border)",
-              borderRadius: 10,
-              padding: "10px 12px",
-              fontSize: 14,
+              background: "var(--mf-surface-2)",
               color: "var(--mf-text)",
             }}
           >
             {error ? `Location error: ${error}` : "Getting your location…"}
           </div>
-        </div>
-      )}
+        )}
 
-      <div
-        className="mapControls"
-      >
+        <div style={{ display: "grid", gap: 18 }}>
+          {filteredLocations.length === 0 ? (
+            <div
+              style={{
+                padding: 24,
+                borderRadius: 20,
+                border: "1px solid var(--mf-border)",
+                background: "var(--mf-surface-2)",
+                color: "var(--mf-muted)",
+              }}
+            >
+              No profiles found for the selected filter. Try a different purpose or check back later.
+            </div>
+          ) : (
+            filteredLocations.map((loc, idx) => {
+              const username = loc.username?.trim() || "Unknown";
+              const isSelf = user?.username === loc.username?.trim();
+              const normalizedUsername = loc.username?.trim().toLowerCase() ?? "";
+              const isFriend = normalizedUsername ? friends.has(normalizedUsername) : false;
+              const requestState = normalizedUsername ? friendRequests[normalizedUsername] : undefined;
+
+              return (
+                <article
+                  key={`${username}-${idx}`}
+                  onClick={() => setSelectedProfile(loc)}
+                  style={{
+                    padding: 24,
+                    borderRadius: 24,
+                    border: "1px solid var(--mf-border)",
+                    background: "var(--mf-surface-2)",
+                    boxShadow: "0 18px 40px rgba(0,0,0,0.05)",
+                    cursor: "pointer",
+                    transition: "transform 0.15s ease, box-shadow 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.transform = "none";
+                  }}
+                >
+                  <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        width: 64,
+                        height: 64,
+                        borderRadius: 9999,
+                        overflow: "hidden",
+                        background: "var(--mf-surface)",
+                        border: "1px solid var(--mf-border)",
+                        display: "grid",
+                        placeItems: "center",
+                        flex: "0 0 auto",
+                      }}
+                    >
+                      {loc.avatar_url ? (
+                        <img
+                          src={loc.avatar_url}
+                          alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 24, fontWeight: 800, color: "var(--mf-muted)" }}>
+                          {username.slice(0, 1).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                        <h2 style={{ margin: 0, fontSize: 20, lineHeight: 1.1 }}>{username}</h2>
+                        {loc.purpose ? (
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              padding: "6px 12px",
+                              borderRadius: 9999,
+                              border: `1px solid ${PURPOSE_COLORS[loc.purpose].badgeBorder}`,
+                              background: PURPOSE_COLORS[loc.purpose].badgeBg,
+                              color: PURPOSE_COLORS[loc.purpose].badgeText,
+                              fontSize: 12,
+                              lineHeight: 1.2,
+                            }}
+                          >
+                            {loc.purpose}
+                          </span>
+                        ) : null}
+                        {isSelf ? (
+                          <span
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: 9999,
+                              background: "rgba(15,23,42,0.06)",
+                              color: "var(--mf-muted)",
+                              fontSize: 12,
+                            }}
+                          >
+                            You
+                          </span>
+                        ) : null}
+                        {isFriend ? (
+                          <span
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: 9999,
+                              background: "rgba(34,197,94,0.12)",
+                              color: "#166534",
+                              fontSize: 12,
+                            }}
+                          >
+                            Friend
+                          </span>
+                        ) : null}
+                      </div>
+                      <p style={{ margin: "10px 0 0", color: "var(--mf-muted)", lineHeight: 1.7 }}>
+                        {loc.bio?.trim() || "This profile hasn’t added a bio yet, but they’re ready to connect."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 18, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+                    <div style={{ color: "var(--mf-muted)", fontSize: 13 }}>
+                      {loc.purpose ? `Looking for ${loc.purpose}` : "Open to connections"}
+                    </div>
+                    {loc.username?.trim() && !isSelf && !isFriend ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          sendFriendRequest(loc.username as string);
+                        }}
+                        disabled={requestState?.status === "sending" || requestState?.status === "sent"}
+                        style={{
+                          minWidth: 180,
+                          padding: "10px 14px",
+                          borderRadius: 14,
+                          border: "1px solid var(--mf-border)",
+                          background: "var(--mf-primary)",
+                          color: "var(--mf-primary-text)",
+                          fontSize: 14,
+                          cursor:
+                            requestState?.status === "sending" || requestState?.status === "sent"
+                              ? "not-allowed"
+                              : "pointer",
+                          opacity: requestState?.status === "sending" || requestState?.status === "sent" ? 0.75 : 1,
+                        }}
+                      >
+                        {requestState?.status === "sending"
+                          ? "Sending…"
+                          : requestState?.status === "sent"
+                          ? "Request sent"
+                          : user
+                          ? "Send friend request"
+                          : "Login to add friend"}
+                      </button>
+                    ) : null}
+                  </div>
+                  {requestState?.status === "error" ? (
+                    <div style={{ marginTop: 10, color: "var(--mf-danger)", fontSize: 13 }}>
+                      {requestState.error || "Failed to send request."}
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {selectedProfile && (
         <div
-          className="control"
-          aria-hidden="true"
           style={{
-            background: "var(--mf-surface)",
-            color: "var(--mf-text)",
-            border: "1px solid var(--mf-border)",
-            borderRadius: 9999,
-            padding: 6,
-            height: 40,
-            width: 40,
+            position: "fixed",
+            inset: 0,
+            zIndex: 3500,
+            background: "rgba(0,0,0,0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            flex: "0 0 auto",
+            padding: 16,
           }}
-          title="MapFriend"
+          onClick={() => setSelectedProfile(null)}
         >
-          <img
-            src="/logo.png"
-            alt=""
-            style={{ width: 26, height: 26, objectFit: "contain" }}
-          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              width: "100%",
+              maxWidth: 520,
+              borderRadius: 24,
+              background: "var(--mf-surface)",
+              padding: 24,
+              border: "1px solid var(--mf-border)",
+              boxShadow: "0 30px 80px rgba(0,0,0,0.18)",
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                <div
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 9999,
+                    overflow: "hidden",
+                    border: "1px solid var(--mf-border)",
+                    background: "var(--mf-surface-2)",
+                    display: "grid",
+                    placeItems: "center",
+                  }}
+                >
+                  {selectedProfile.avatar_url ? (
+                    <img
+                      src={selectedProfile.avatar_url}
+                      alt=""
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: 28, fontWeight: 800, color: "var(--mf-muted)" }}>
+                      {(selectedProfile.username?.trim() || "?").slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <h2 style={{ margin: 0, fontSize: 24 }}>{selectedProfile.username ?? "Unknown"}</h2>
+                  <div style={{ marginTop: 6, color: "var(--mf-muted)", fontSize: 14 }}>
+                    {selectedProfile.purpose ? `Looking for ${selectedProfile.purpose}` : "Open to connections"}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedProfile(null)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--mf-text)",
+                  fontSize: 18,
+                  cursor: "pointer",
+                }}
+                aria-label="Close profile view"
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ marginTop: 18, color: "var(--mf-text)", lineHeight: 1.7 }}>
+              {selectedProfile.bio?.trim() || "This profile hasn’t added a bio yet."}
+            </div>
+            <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "8px 14px",
+                  borderRadius: 9999,
+                  border: `1px solid ${
+                    selectedProfile.purpose
+                      ? PURPOSE_COLORS[selectedProfile.purpose].badgeBorder
+                      : DEFAULT_COLORS.badgeBorder
+                  }`,
+                  background: selectedProfile.purpose
+                    ? PURPOSE_COLORS[selectedProfile.purpose].badgeBg
+                    : DEFAULT_COLORS.badgeBg,
+                  color: selectedProfile.purpose
+                    ? PURPOSE_COLORS[selectedProfile.purpose].badgeText
+                    : DEFAULT_COLORS.badgeText,
+                  fontSize: 13,
+                }}
+              >
+                {selectedProfile.purpose ?? "No purpose specified"}
+              </span>
+              <span style={{ color: "var(--mf-muted)", fontSize: 13 }}>
+                {typeof selectedProfile.lat === "number" && typeof selectedProfile.lng === "number" && position
+                  ? formatDistance(distanceMeters(position, selectedProfile))
+                  : "Location hidden"}
+              </span>
+            </div>
+          </div>
         </div>
-        <button
-          className="control"
-          type="button"
-          onClick={fitVisiblePeople}
-          disabled={filteredLocations.length === 0 || !map}
-          style={{
-            background: "var(--mf-surface)",
-            color: "var(--mf-text)",
-            border: "1px solid var(--mf-border)",
-            borderRadius: 9999,
-            padding: "10px 12px",
-            fontSize: 14,
-            opacity: filteredLocations.length === 0 || !map ? 0.6 : 1,
-            cursor: filteredLocations.length === 0 || !map ? "not-allowed" : "pointer",
-            touchAction: "manipulation",
-            whiteSpace: "nowrap",
-          }}
-          title={
-            purposeFilter === "all"
-              ? "Zoom to all people"
-              : `Zoom to people matching: ${purposeFilter}`
-          }
-        >
-          People (
-          {purposeFilter === "all"
-            ? filteredLocations.length
-            : `${filteredLocations.length}/${savedLocations.length}`}
-          )
-        </button>
-
-        <select
-          className="control controlSelect"
-          value={purposeFilter}
-          onChange={(e) => setPurposeFilter(e.target.value as User["purpose"] | "all")}
-          style={{
-            background: "var(--mf-surface)",
-            color: "var(--mf-text)",
-            border: "1px solid var(--mf-border)",
-            borderRadius: 9999,
-            padding: "10px 12px",
-            fontSize: 14,
-            height: 40,
-          }}
-          title="Filter people by purpose"
-        >
-          <option value="all">All purposes</option>
-          {PURPOSES.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-
-      </div>
-
-      <style jsx>{`
-        .mapControls {
-          position: fixed;
-          top: 64px;
-          left: 50%;
-          transform: translateX(-50%);
-          z-index: 2000;
-          display: flex;
-          gap: 8px;
-          align-items: flex-start;
-          flex-wrap: wrap;
-          justify-content: center;
-          max-width: calc(100vw - 24px);
-        }
-
-        @media (max-width: 520px) {
-          .mapControls {
-            top: 12px;
-            left: 12px;
-            right: 12px;
-            transform: none;
-            display: flex;
-            flex-wrap: nowrap;
-            align-items: center;
-            justify-content: flex-start;
-            gap: 8px;
-            padding: 6px;
-            border-radius: 9999px;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            background: rgba(255, 255, 255, 0.75);
-            backdrop-filter: blur(10px);
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-          }
-
-          .control {
-            flex: 0 0 auto;
-            white-space: nowrap;
-          }
-
-          .controlSelect {
-            flex: 1 1 auto;
-            min-width: 140px;
-          }
-        }
-      `}</style>
+      )}
 
       {authOpen && (
         <div
@@ -983,6 +947,72 @@ export function Map() {
                     </option>
                   ))}
                 </select>
+
+                <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>
+                  Profile photo
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    if (file) {
+                      const preview = URL.createObjectURL(file);
+                      if (authAvatarPreview) {
+                        URL.revokeObjectURL(authAvatarPreview);
+                      }
+                      setAuthAvatarFile(file);
+                      setAuthAvatarPreview(preview);
+                    }
+                  }}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid var(--mf-border-strong)",
+                    marginBottom: 12,
+                    background: "var(--mf-surface)",
+                    color: "var(--mf-text)",
+                  }}
+                />
+                {authAvatarPreview ? (
+                  <div
+                    style={{
+                      width: 96,
+                      height: 96,
+                      borderRadius: 18,
+                      overflow: "hidden",
+                      border: "1px solid var(--mf-border)",
+                      marginBottom: 12,
+                    }}
+                  >
+                    <img
+                      src={authAvatarPreview}
+                      alt="Selected avatar"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  </div>
+                ) : null}
+
+                <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>
+                  Bio
+                </label>
+                <textarea
+                  value={authBio}
+                  onChange={(e) => setAuthBio(e.target.value)}
+                  rows={3}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid var(--mf-border-strong)",
+                    marginBottom: 12,
+                    background: "var(--mf-surface)",
+                    color: "var(--mf-text)",
+                    resize: "vertical",
+                  }}
+                />
               </>
             )}
 
@@ -1010,21 +1040,12 @@ export function Map() {
               {isAuthSubmitting
                 ? "Please wait…"
                 : authMode === "register"
-                  ? "Create account"
-                  : "Login"}
+                ? "Create account"
+                : "Login"}
             </button>
           </div>
         </div>
       )}
     </div>
   );
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
