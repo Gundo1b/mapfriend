@@ -537,15 +537,18 @@ export function Map() {
           </div>
         )}
 
-        <div style={{ display: "grid", gap: 18 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 32 }}>
           {filteredLocations.length === 0 ? (
             <div
               style={{
-                padding: 24,
-                borderRadius: 20,
+                width: "100%",
+                maxWidth: 600,
+                padding: 40,
+                borderRadius: 24,
                 border: "1px solid var(--mf-border)",
                 background: "var(--mf-surface-2)",
                 color: "var(--mf-muted)",
+                textAlign: "center",
               }}
             >
               No profiles found for the selected filter. Try a different purpose or check back later.
@@ -563,143 +566,106 @@ export function Map() {
                   key={`${username}-${idx}`}
                   onClick={() => setSelectedProfile(loc)}
                   style={{
-                    padding: 24,
-                    borderRadius: 24,
+                    width: "100%",
+                    maxWidth: 500,
+                    borderRadius: 32,
                     border: "1px solid var(--mf-border)",
                     background: "var(--mf-surface-2)",
-                    boxShadow: "0 18px 40px rgba(0,0,0,0.05)",
+                    boxShadow: "0 20px 50px rgba(0,0,0,0.1)",
                     cursor: "pointer",
-                    transition: "transform 0.15s ease, box-shadow 0.15s ease",
+                    transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                    overflow: "hidden",
                   }}
                   onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+                    (e.currentTarget as HTMLElement).style.transform = "scale(1.02)";
+                    (e.currentTarget as HTMLElement).style.boxShadow = "0 30px 60px rgba(0,0,0,0.15)";
                   }}
                   onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.transform = "none";
+                    (e.currentTarget as HTMLElement).style.transform = "scale(1)";
+                    (e.currentTarget as HTMLElement).style.boxShadow = "0 20px 50px rgba(0,0,0,0.1)";
                   }}
                 >
-                  <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-                    <div
-                      style={{
-                        width: 64,
-                        height: 64,
-                        borderRadius: 9999,
-                        overflow: "hidden",
-                        background: "var(--mf-surface)",
-                        border: "1px solid var(--mf-border)",
-                        display: "grid",
-                        placeItems: "center",
-                        flex: "0 0 auto",
-                      }}
-                    >
-                      {loc.avatar_url ? (
-                        <img
-                          src={loc.avatar_url}
-                          alt=""
-                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        />
-                      ) : (
-                        <span style={{ fontSize: 24, fontWeight: 800, color: "var(--mf-muted)" }}>
+                  <div style={{ position: "relative", aspectRatio: "4/5", background: "#111b21" }}>
+                    {loc.avatar_url ? (
+                      <img
+                        src={loc.avatar_url}
+                        alt=""
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center" }}>
+                        <span style={{ fontSize: 80, fontWeight: 800, color: "rgba(255,255,255,0.1)" }}>
                           {username.slice(0, 1).toUpperCase()}
                         </span>
-                      )}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-                        <h2 style={{ margin: 0, fontSize: 20, lineHeight: 1.1 }}>{username}</h2>
-                        {loc.purpose ? (
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              padding: "6px 12px",
-                              borderRadius: 9999,
-                              border: `1px solid ${PURPOSE_COLORS[loc.purpose].badgeBorder}`,
-                              background: PURPOSE_COLORS[loc.purpose].badgeBg,
-                              color: PURPOSE_COLORS[loc.purpose].badgeText,
-                              fontSize: 12,
-                              lineHeight: 1.2,
-                            }}
-                          >
+                      </div>
+                    )}
+                    <div style={{
+                      position: "absolute",
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      padding: "40px 24px 24px",
+                      background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)",
+                      color: "white"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <h2 style={{ margin: 0, fontSize: 32, fontWeight: 800 }}>{username}</h2>
+                        <div style={{ width: 12, height: 12, borderRadius: 6, background: "#22c55e", border: "2px solid white" }} />
+                      </div>
+                      <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                        {loc.purpose && (
+                          <span style={{
+                            padding: "4px 12px",
+                            borderRadius: 12,
+                            background: "rgba(255,255,255,0.2)",
+                            backdropFilter: "blur(4px)",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            textTransform: "uppercase"
+                          }}>
                             {loc.purpose}
                           </span>
-                        ) : null}
-                        {isSelf ? (
-                          <span
-                            style={{
-                              padding: "6px 12px",
-                              borderRadius: 9999,
-                              background: "rgba(15,23,42,0.06)",
-                              color: "var(--mf-muted)",
-                              fontSize: 12,
-                            }}
-                          >
-                            You
-                          </span>
-                        ) : null}
-                        {isFriend ? (
-                          <span
-                            style={{
-                              padding: "6px 12px",
-                              borderRadius: 9999,
-                              background: "rgba(34,197,94,0.12)",
-                              color: "#166534",
-                              fontSize: 12,
-                            }}
-                          >
-                            Friend
-                          </span>
-                        ) : null}
+                        )}
+                        {isSelf && <span style={{ padding: "4px 12px", borderRadius: 12, background: "rgba(255,255,255,0.1)", fontSize: 12 }}>You</span>}
                       </div>
-                      <p style={{ margin: "10px 0 0", color: "var(--mf-muted)", lineHeight: 1.7 }}>
-                        {loc.bio?.trim() || "This profile hasn’t added a bio yet, but they’re ready to connect."}
-                      </p>
                     </div>
                   </div>
 
-                  <div style={{ marginTop: 18, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-                    <div style={{ color: "var(--mf-muted)", fontSize: 13 }}>
-                      {loc.purpose ? `Looking for ${loc.purpose}` : "Open to connections"}
+                  <div style={{ padding: 24 }}>
+                    <p style={{ margin: "0 0 20px", color: "var(--mf-text)", lineHeight: 1.6, fontSize: 16 }}>
+                      {loc.bio?.trim() || "Ready to connect and meet new people nearby!"}
+                    </p>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ fontSize: 13, color: "var(--mf-muted)" }}>
+                         {position ? formatDistance(distanceMeters(position, loc)) : "Nearby"}
+                      </div>
+                      {loc.username?.trim() && !isSelf && !isFriend ? (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            sendFriendRequest(loc.username as string);
+                          }}
+                          disabled={requestState?.status === "sending" || requestState?.status === "sent"}
+                          style={{
+                            padding: "10px 20px",
+                            borderRadius: 16,
+                            background: "var(--mf-primary)",
+                            color: "var(--mf-primary-text)",
+                            border: "none",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            transition: "opacity 0.2s"
+                          }}
+                        >
+                          {requestState?.status === "sending" ? "..." : requestState?.status === "sent" ? "Sent" : "Add Friend"}
+                        </button>
+                      ) : isFriend ? (
+                        <span style={{ color: "#22c55e", fontWeight: 700 }}>Friends</span>
+                      ) : null}
                     </div>
-                    {loc.username?.trim() && !isSelf && !isFriend ? (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          sendFriendRequest(loc.username as string);
-                        }}
-                        disabled={requestState?.status === "sending" || requestState?.status === "sent"}
-                        style={{
-                          minWidth: 180,
-                          padding: "10px 14px",
-                          borderRadius: 14,
-                          border: "1px solid var(--mf-border)",
-                          background: "var(--mf-primary)",
-                          color: "var(--mf-primary-text)",
-                          fontSize: 14,
-                          cursor:
-                            requestState?.status === "sending" || requestState?.status === "sent"
-                              ? "not-allowed"
-                              : "pointer",
-                          opacity: requestState?.status === "sending" || requestState?.status === "sent" ? 0.75 : 1,
-                        }}
-                      >
-                        {requestState?.status === "sending"
-                          ? "Sending…"
-                          : requestState?.status === "sent"
-                          ? "Request sent"
-                          : user
-                          ? "Send friend request"
-                          : "Login to add friend"}
-                      </button>
-                    ) : null}
                   </div>
-                  {requestState?.status === "error" ? (
-                    <div style={{ marginTop: 10, color: "var(--mf-danger)", fontSize: 13 }}>
-                      {requestState.error || "Failed to send request."}
-                    </div>
-                  ) : null}
                 </article>
               );
             })
