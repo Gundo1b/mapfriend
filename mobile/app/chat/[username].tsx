@@ -14,6 +14,9 @@ import {
 
 import { apiFetchJson } from "@/lib/api";
 import { asApiMessage, useAuth } from "@/lib/auth";
+import { useColorScheme } from "@/components/useColorScheme";
+import Colors from "@/constants/Colors";
+import { SymbolView } from "expo-symbols";
 
 type Message = {
   id: string;
@@ -34,6 +37,8 @@ export default function ConversationScreen() {
   const otherUsername = (username ?? "").toString();
   const { token, user } = useAuth();
   const nav = useNavigation();
+  const colorScheme = useColorScheme();
+  const theme = Colors[colorScheme ?? "light"];
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,8 +52,17 @@ export default function ConversationScreen() {
   const shouldAutoScrollRef = useRef(true);
 
   useEffect(() => {
-    nav.setOptions({ title: otherUsername });
-  }, [nav, otherUsername]);
+    nav.setOptions({ 
+      title: otherUsername,
+      headerStyle: {
+        backgroundColor: theme.background,
+      },
+      headerTintColor: theme.text,
+      headerTitleStyle: {
+        fontWeight: '800',
+      }
+    });
+  }, [nav, otherUsername, theme]);
 
   const header = useMemo(() => otherUsername || "Chat", [otherUsername]);
 
@@ -146,34 +160,25 @@ export default function ConversationScreen() {
 
   if (!token || !user) {
     return (
-      <View style={[styles.root, styles.center]}>
-        <Text style={styles.error}>Please login first.</Text>
+      <View style={[styles.root, styles.center, { backgroundColor: theme.background }]}>
+        <Text style={[styles.error, { color: theme.text }]}>Please login first.</Text>
       </View>
     );
   }
 
   return (
     <KeyboardAvoidingView
-      style={styles.root}
+      style={[styles.root, { backgroundColor: theme.background }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 84 : 0}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 94 : 0}
     >
-      <View style={styles.header}>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {header}
-        </Text>
-        <Text style={styles.headerSub} numberOfLines={1}>
-          @ {user.username}
-        </Text>
-      </View>
-
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator />
+          <ActivityIndicator color={theme.tint} />
         </View>
       ) : (
         <>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? <Text style={[styles.error, { color: "#ff4d4d" }]}>{error}</Text> : null}
 
           <ScrollView
             ref={scrollRef}
@@ -187,27 +192,46 @@ export default function ConversationScreen() {
             }}
             scrollEventThrottle={32}
           >
+            {messages.length === 0 ? (
+               <View style={styles.emptyContainer}>
+                  <View style={[styles.largeAvatar, { backgroundColor: colorScheme === 'dark' ? '#1c2c35' : '#f0f0f0' }]}>
+                    <Text style={[styles.largeAvatarText, { color: theme.text }]}>{otherUsername.slice(0, 2).toUpperCase()}</Text>
+                  </View>
+                  <Text style={[styles.emptyTitle, { color: theme.text }]}>{otherUsername}</Text>
+                  <Text style={styles.emptySub}>Start your conversation</Text>
+               </View>
+            ) : null}
             {messages.map((m) => {
               const mine = m.fromUserId === user.id;
               return (
                 <View key={m.id} style={[styles.msgRow, mine ? styles.msgRowMine : styles.msgRowTheirs]}>
-                  <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                    <Text style={styles.bubbleBody}>{m.body}</Text>
-                    <Text style={styles.bubbleTime}>{formatTime(m.createdAt)}</Text>
+                  <View style={[
+                    styles.bubble, 
+                    mine ? [styles.bubbleMine, { backgroundColor: colorScheme === 'dark' ? "#00a884" : "#00a884" }] : [styles.bubbleTheirs, { backgroundColor: colorScheme === 'dark' ? "#202c33" : "#e9e9eb", borderColor: colorScheme === 'dark' ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)" }]
+                  ]}>
+                    <Text style={[styles.bubbleBody, { color: mine ? "white" : theme.text }]}>{m.body}</Text>
+                    <Text style={[styles.bubbleTime, { color: mine ? "rgba(255,255,255,0.7)" : "rgba(120,120,120,0.7)" }]}>{formatTime(m.createdAt)}</Text>
                   </View>
                 </View>
               );
             })}
-            <View style={{ height: 6 }} />
+            <View style={{ height: 10 }} />
           </ScrollView>
 
-          <View style={styles.composer}>
+          <View style={[styles.composer, { 
+            backgroundColor: theme.background,
+            borderTopColor: colorScheme === 'dark' ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)"
+          }]}>
             <TextInput
               value={draft}
               onChangeText={setDraft}
-              placeholder="Message"
-              placeholderTextColor="rgba(233,237,239,0.55)"
-              style={styles.input}
+              placeholder="Type a message..."
+              placeholderTextColor="rgba(120,120,120,0.55)"
+              style={[styles.input, { 
+                backgroundColor: colorScheme === 'dark' ? "#202c33" : "#f0f0f0",
+                color: theme.text,
+                borderColor: colorScheme === 'dark' ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)"
+              }]}
               onFocus={() => {
                 shouldAutoScrollRef.current = true;
                 setTimeout(() => scrollToBottom("auto"), 80);
@@ -219,9 +243,17 @@ export default function ConversationScreen() {
             <Pressable
               onPress={() => void send()}
               disabled={sending || !draft.trim()}
-              style={[styles.sendBtn, sending || !draft.trim() ? styles.btnDisabled : null]}
+              style={[
+                styles.sendBtn, 
+                { backgroundColor: "#00a884" },
+                sending || !draft.trim() ? styles.btnDisabled : null
+              ]}
             >
-              <Text style={styles.sendText}>{sending ? "..." : "Send"}</Text>
+              {sending ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <SymbolView name="paperplane.fill" size={20} tintColor="white" />
+              )}
             </Pressable>
           </View>
         </>
@@ -231,66 +263,79 @@ export default function ConversationScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#0b141a" },
+  root: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  header: {
-    paddingTop: 12,
-    paddingBottom: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(17,27,33,0.96)",
-  },
-  headerTitle: { color: "#e9edef", fontSize: 16, fontWeight: "900" },
-  headerSub: { color: "rgba(233,237,239,0.65)", marginTop: 2, fontSize: 12 },
-  error: { color: "#ffb4b4", paddingHorizontal: 16, paddingTop: 10 },
+  error: { color: "#ff4d4d", paddingHorizontal: 16, paddingTop: 10, textAlign: 'center' },
   messagesPane: { flex: 1 },
-  messagesContent: { padding: 12, gap: 8 },
-  msgRow: { flexDirection: "row" },
+  messagesContent: { padding: 16, gap: 12 },
+  msgRow: { flexDirection: "row", marginBottom: 2 },
   msgRowMine: { justifyContent: "flex-end" },
   msgRowTheirs: { justifyContent: "flex-start" },
   bubble: {
-    maxWidth: "82%",
-    borderRadius: 16,
-    paddingVertical: 9,
-    paddingHorizontal: 10,
+    maxWidth: "80%",
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
   },
-  bubbleMine: { backgroundColor: "rgba(0,168,132,0.22)", borderColor: "rgba(0,168,132,0.35)" },
-  bubbleTheirs: { backgroundColor: "rgba(17,27,33,0.92)" },
-  bubbleBody: { color: "#e9edef", fontSize: 14, lineHeight: 19 },
-  bubbleTime: { color: "rgba(233,237,239,0.65)", fontSize: 11, marginTop: 4, textAlign: "right" },
+  bubbleMine: { 
+    borderBottomRightRadius: 4,
+    borderColor: 'transparent',
+  },
+  bubbleTheirs: { 
+    borderBottomLeftRadius: 4,
+  },
+  bubbleBody: { fontSize: 16, lineHeight: 22 },
+  bubbleTime: { fontSize: 11, marginTop: 4, textAlign: "right" },
   composer: {
     flexDirection: "row",
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(17,27,33,0.96)",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    alignItems: 'center',
   },
   input: {
     flex: 1,
-    borderRadius: 9999,
+    borderRadius: 24,
     paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    color: "#e9edef",
+    fontSize: 16,
   },
   sendBtn: {
-    borderRadius: 9999,
-    paddingHorizontal: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(0,168,132,0.35)",
-    backgroundColor: "#00a884",
   },
-  sendText: { color: "#052b24", fontWeight: "900" },
-  btnDisabled: { opacity: 0.6 },
+  btnDisabled: { opacity: 0.5 },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  largeAvatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  largeAvatarText: {
+    fontSize: 32,
+    fontWeight: '800',
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  emptySub: {
+    fontSize: 14,
+    color: 'rgba(120,120,120,0.7)',
+  }
 });
 

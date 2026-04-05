@@ -377,71 +377,35 @@ export default function ChatPage() {
       <header className="topBar">
         <div className="topBarLeft">
           <img src="/logo.png" alt="" aria-hidden="true" className="topBarLogo" />
-          <div className="topBarTitle">Chats</div>
+          <div className="topBarTitle">Messages</div>
         </div>
         <div className="topBarRight">
-          {isMounted && notificationSupported ? (
-            notificationPermission !== "granted" ? (
-              <button type="button" className="pillBtn" onClick={enableNotifications}>
-                Enable notifications
-              </button>
-            ) : notificationsEnabled ? (
-              <button type="button" className="pillBtn pillBtnOn" onClick={disableNotifications}>
-                Notifications on
-              </button>
-              ) : (
-                <button
-                  type="button"
-                  className="pillBtn"
-                  onClick={() => {
-                    window.localStorage.setItem("mf_notifications_enabled", "true");
-                    setNotificationsEnabled(true);
-                  }}
-                >
-                  Notifications off
-              </button>
-            )
-          ) : null}
+          {me && (
+             <div className="listHeaderSub">
+                @{me.username}
+             </div>
+          )}
         </div>
       </header>
 
       <div className={`chatGrid ${selected ? "hasSelected" : ""}`}>
         <section className="friendsPane">
-          {isMounted && notificationSupported && !notificationSecureContext ? (
-            <div className="notice noticeWarn">Notifications need HTTPS (secure origin).</div>
-          ) : null}
-          {isMounted && notificationSupported && notificationPermission === "denied" ? (
-            <div className="notice noticeError">
-              Notifications are blocked in your browser settings for this site.
-            </div>
-          ) : null}
-          {isMounted && notificationSupported && notificationPermission === "granted" ? (
-            <div style={{ padding: "0 6px 10px" }}>
-              <button type="button" className="pillBtn" onClick={testNotification}>
-                Test notification
-              </button>
-            </div>
-          ) : null}
-
           <div className="listCard">
             <div className="listHeader">
-              <div className="listHeaderTitle">Friends</div>
-              <div className="listHeaderSub">
-                {me ? `@${me.username}` : "Login to chat"}
-              </div>
+              <div className="listHeaderTitle">Recent Chats</div>
             </div>
 
             {loading ? (
-              <div className="muted" style={{ padding: 12 }}>
-                Loading...
+              <div className="muted" style={{ padding: 20, textAlign: "center" }}>
+                <div className="spinner" />
               </div>
             ) : error ? (
               <div className="errorText" style={{ padding: 12 }}>
                 {error}
               </div>
             ) : friendsSorted.length === 0 ? (
-              <div className="muted" style={{ padding: 12 }}>
-                No friends yet. Accept a friend request in Settings to see it here.
+              <div className="muted" style={{ padding: 24, textAlign: "center", fontSize: 14 }}>
+                No friends yet. Add people from the Explore tab to start chatting!
               </div>
             ) : (
               <div className="friendList">
@@ -463,7 +427,7 @@ export default function ChatPage() {
                       </div>
                       <div className="friendMeta">
                         <div className="friendName">{f.username}</div>
-                        <div className="friendSub">{unread > 0 ? "New messages" : "Tap to chat"}</div>
+                        <div className="friendSub">{unread > 0 ? "New message" : "Active now"}</div>
                       </div>
                       <div className="friendRight">
                         {unread > 0 ? <div className="unreadBadge">{unread}</div> : null}
@@ -479,8 +443,8 @@ export default function ChatPage() {
         {selected ? (
           <section className="conversationPane" aria-label={`Chat with ${selected.username}`}>
             <div className="convHeader">
-              <button type="button" className="iconBtn" onClick={() => setSelected(null)}>
-                Back
+              <button type="button" className="backBtn" onClick={() => setSelected(null)}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
               </button>
               <div className="avatar avatarSmall" aria-hidden="true">
                 {initialsFor(selected.username)}
@@ -498,7 +462,13 @@ export default function ChatPage() {
               ref={messagesPaneRef}
               onScroll={handleMessagesScroll}
             >
-              {me && messages.length === 0 ? <div className="muted">Say hi!</div> : null}
+              {me && messages.length === 0 ? (
+                <div className="emptyChat">
+                  <div className="avatar avatarLarge">{initialsFor(selected.username)}</div>
+                  <h3>{selected.username}</h3>
+                  <p>Say hello to start your conversation!</p>
+                </div>
+              ) : null}
               <div className="messageList">
                 {messages.map((m) => {
                   const mine = me ? m.fromUserId === me.id : false;
@@ -530,7 +500,7 @@ export default function ChatPage() {
                     void send();
                   }
                 }}
-                placeholder="Message"
+                placeholder="Type a message..."
                 aria-label="Message"
               />
               <button
@@ -539,11 +509,19 @@ export default function ChatPage() {
                 onClick={send}
                 disabled={isSending || !messageDraft.trim()}
               >
-                {isSending ? "Sending..." : "Send"}
+                {isSending ? "..." : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>}
               </button>
             </div>
           </section>
-        ) : null}
+        ) : (
+          <section className="noSelectionPane">
+             <div className="noSelectionContent">
+                <div className="noSelectionIcon">💬</div>
+                <h3>Your Messages</h3>
+                <p>Select a friend from the list to start chatting.</p>
+             </div>
+          </section>
+        )}
       </div>
 
       <style jsx>{`
@@ -553,8 +531,9 @@ export default function ChatPage() {
           box-sizing: border-box;
           display: flex;
           flex-direction: column;
-          background: #0b141a;
-          color: #e9edef;
+          background: var(--mf-bg);
+          color: var(--mf-text);
+          transition: background 0.2s, color 0.2s;
         }
 
         .topBar {
@@ -565,58 +544,34 @@ export default function ChatPage() {
           align-items: center;
           justify-content: space-between;
           gap: 10px;
-          padding: 10px 10px;
-          border-radius: 18px;
-          background: rgba(17, 27, 33, 0.92);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          padding: 12px 16px;
+          border-radius: 20px;
+          background: var(--mf-surface);
+          border: 1px solid var(--mf-border);
           backdrop-filter: blur(10px);
+          margin-bottom: 12px;
         }
 
         .topBarLeft {
           display: flex;
           align-items: center;
-          gap: 10px;
-          min-width: 0;
+          gap: 12px;
         }
 
         .topBarLogo {
-          width: 28px;
-          height: 28px;
+          width: 32px;
+          height: 32px;
           object-fit: contain;
-          border-radius: 8px;
+          border-radius: 10px;
         }
 
         .topBarTitle {
-          font-size: 18px;
+          font-size: 20px;
           font-weight: 800;
-          letter-spacing: 0.2px;
-        }
-
-        .topBarRight {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          flex: 0 0 auto;
-        }
-
-        .pillBtn {
-          background: rgba(255, 255, 255, 0.06);
-          color: #e9edef;
-          border: 1px solid rgba(255, 255, 255, 0.10);
-          border-radius: 9999px;
-          padding: 7px 10px;
-          font-size: 12px;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-
-        .pillBtnOn {
-          background: rgba(0, 168, 132, 0.18);
-          border-color: rgba(0, 168, 132, 0.35);
+          letter-spacing: -0.5px;
         }
 
         .chatGrid {
-          margin-top: 12px;
           display: grid;
           grid-template-columns: 1fr;
           gap: 12px;
@@ -627,66 +582,49 @@ export default function ChatPage() {
         .friendsPane {
           display: flex;
           flex-direction: column;
-          gap: 10px;
-        }
-
-        .notice {
-          border-radius: 14px;
-          padding: 10px 12px;
-          border: 1px solid rgba(255, 255, 255, 0.10);
-          background: rgba(17, 27, 33, 0.92);
-          font-size: 12px;
-        }
-
-        .noticeWarn {
-          color: #ffd18b;
-        }
-
-        .noticeError {
-          color: #ffb4b4;
         }
 
         .listCard {
-          border-radius: 18px;
-          background: rgba(17, 27, 33, 0.92);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 24px;
+          background: var(--mf-surface);
+          border: 1px solid var(--mf-border);
           overflow: hidden;
+          flex: 1;
+          display: flex;
+          flex-direction: column;
         }
 
         .listHeader {
-          padding: 14px 14px 10px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+          padding: 18px 20px 14px;
+          border-bottom: 1px solid var(--mf-border);
         }
 
         .listHeaderTitle {
           font-weight: 800;
-          font-size: 14px;
-        }
-
-        .listHeaderSub {
-          margin-top: 2px;
-          color: rgba(233, 237, 239, 0.65);
-          font-size: 12px;
+          font-size: 16px;
+          opacity: 0.9;
         }
 
         .friendList {
           display: flex;
           flex-direction: column;
+          overflow-y: auto;
         }
 
         .friendRow {
           width: 100%;
           text-align: left;
           display: grid;
-          grid-template-columns: 40px 1fr auto;
+          grid-template-columns: 48px 1fr auto;
           align-items: center;
-          gap: 10px;
-          padding: 12px 14px;
+          gap: 14px;
+          padding: 14px 20px;
           background: transparent;
           border: none;
           color: inherit;
           cursor: pointer;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+          transition: background 0.15s;
+          border-bottom: 1px solid var(--mf-border);
         }
 
         .friendRow:last-child {
@@ -694,32 +632,41 @@ export default function ChatPage() {
         }
 
         .friendRow:hover {
-          background: rgba(255, 255, 255, 0.04);
+          background: var(--mf-surface-2);
         }
 
         .friendRow.active {
-          background: rgba(0, 168, 132, 0.16);
+          background: var(--mf-surface-2);
+          border-left: 4px solid var(--mf-primary);
+          padding-left: 16px;
         }
 
         .avatar {
-          width: 40px;
-          height: 40px;
-          border-radius: 9999px;
-          background: rgba(255, 255, 255, 0.08);
-          border: 1px solid rgba(255, 255, 255, 0.10);
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          background: var(--mf-surface-2);
+          border: 1px solid var(--mf-border);
           display: flex;
           align-items: center;
           justify-content: center;
-          font-weight: 900;
-          letter-spacing: 0.5px;
-          color: #e9edef;
+          font-weight: 800;
+          color: var(--mf-text);
           user-select: none;
+          font-size: 16px;
         }
 
         .avatarSmall {
-          width: 34px;
-          height: 34px;
-          font-size: 12px;
+          width: 38px;
+          height: 38px;
+          font-size: 13px;
+        }
+
+        .avatarLarge {
+          width: 80px;
+          height: 80px;
+          font-size: 28px;
+          margin-bottom: 16px;
         }
 
         .friendMeta {
@@ -727,46 +674,37 @@ export default function ChatPage() {
         }
 
         .friendName {
-          font-weight: 800;
-          font-size: 14px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          font-weight: 700;
+          font-size: 15px;
+          margin-bottom: 2px;
         }
 
         .friendSub {
-          margin-top: 2px;
-          font-size: 12px;
-          color: rgba(233, 237, 239, 0.65);
+          font-size: 13px;
+          color: var(--mf-muted);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
 
-        .friendRight {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
         .unreadBadge {
-          min-width: 22px;
-          height: 22px;
-          padding: 0 7px;
-          border-radius: 9999px;
-          background: #00a884;
-          color: #052b24;
-          font-weight: 900;
-          font-size: 12px;
+          min-width: 20px;
+          height: 20px;
+          padding: 0 6px;
+          border-radius: 10px;
+          background: var(--mf-primary);
+          color: var(--mf-primary-text);
+          font-weight: 800;
+          font-size: 11px;
           display: flex;
           align-items: center;
           justify-content: center;
         }
 
         .conversationPane {
-          border-radius: 18px;
-          background: rgba(17, 27, 33, 0.92);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 24px;
+          background: var(--mf-surface);
+          border: 1px solid var(--mf-border);
           overflow: hidden;
           display: flex;
           flex-direction: column;
@@ -776,20 +714,21 @@ export default function ChatPage() {
         .convHeader {
           display: flex;
           align-items: center;
-          gap: 10px;
-          padding: 10px 12px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-          background: rgba(17, 27, 33, 0.96);
+          gap: 12px;
+          padding: 12px 16px;
+          border-bottom: 1px solid var(--mf-border);
+          background: var(--mf-surface);
         }
 
-        .iconBtn {
-          background: rgba(255, 255, 255, 0.06);
-          color: #e9edef;
-          border: 1px solid rgba(255, 255, 255, 0.10);
-          border-radius: 9999px;
-          padding: 7px 10px;
-          font-size: 12px;
+        .backBtn {
+          background: transparent;
+          border: none;
+          color: var(--mf-text);
           cursor: pointer;
+          padding: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
         .convTitleWrap {
@@ -797,35 +736,46 @@ export default function ChatPage() {
         }
 
         .convTitle {
-          font-weight: 900;
-          font-size: 14px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          font-weight: 800;
+          font-size: 16px;
         }
 
         .convSubtitle {
-          margin-top: 2px;
           font-size: 12px;
-          color: rgba(233, 237, 239, 0.65);
+          color: var(--mf-primary);
+          font-weight: 600;
         }
 
         .messagesPane {
           flex: 1;
-          padding: 12px;
-          overflow: auto;
-          min-height: 0;
-          scroll-padding-bottom: 140px;
-          background: radial-gradient(circle at 20% 20%, rgba(0, 168, 132, 0.10), transparent 45%),
-            radial-gradient(circle at 80% 10%, rgba(255, 255, 255, 0.06), transparent 40%),
-            #0b141a;
+          padding: 20px;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          background: var(--mf-bg);
         }
 
         .messageList {
           display: flex;
           flex-direction: column;
-          gap: 8px;
-          padding-bottom: 6px;
+          gap: 12px;
+        }
+
+        .emptyChat {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 40px;
+          color: var(--mf-muted);
+        }
+
+        .emptyChat h3 {
+          color: var(--mf-text);
+          margin: 0 0 8px;
+          font-size: 20px;
         }
 
         .msgRow {
@@ -841,109 +791,139 @@ export default function ChatPage() {
         }
 
         .bubble {
-          max-width: min(520px, 82%);
-          padding: 9px 10px 7px;
-          border-radius: 16px;
-          border: 1px solid rgba(255, 255, 255, 0.10);
-          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+          max-width: 75%;
+          padding: 10px 14px;
+          border-radius: 18px;
+          position: relative;
         }
 
         .bubbleMine {
-          background: rgba(0, 168, 132, 0.22);
-          border-color: rgba(0, 168, 132, 0.35);
+          background: var(--mf-primary);
+          color: var(--mf-primary-text);
+          border-bottom-right-radius: 4px;
         }
 
         .bubbleTheirs {
-          background: rgba(17, 27, 33, 0.92);
-          border-color: rgba(255, 255, 255, 0.10);
+          background: var(--mf-surface-2);
+          color: var(--mf-text);
+          border-bottom-left-radius: 4px;
+          border: 1px solid var(--mf-border);
         }
 
         .bubbleBody {
-          white-space: pre-wrap;
+          font-size: 15px;
+          line-height: 1.4;
           word-break: break-word;
-          font-size: 14px;
-          line-height: 1.35;
         }
 
         .bubbleTime {
+          font-size: 10px;
           margin-top: 4px;
-          font-size: 11px;
-          color: rgba(233, 237, 239, 0.65);
+          opacity: 0.7;
           text-align: right;
         }
 
         .composer {
-          display: grid;
-          grid-template-columns: 1fr auto;
-          gap: 8px;
-          padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-          border-top: 1px solid rgba(255, 255, 255, 0.06);
-          background: rgba(17, 27, 33, 0.96);
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 16px 20px;
+          border-top: 1px solid var(--mf-border);
+          background: var(--mf-surface);
         }
 
         .composerInput {
-          width: 100%;
-          border-radius: 9999px;
-          padding: 10px 12px;
-          border: 1px solid rgba(255, 255, 255, 0.10);
-          background: rgba(255, 255, 255, 0.06);
-          color: #e9edef;
+          flex: 1;
+          border-radius: 24px;
+          padding: 12px 18px;
+          border: 1px solid var(--mf-border);
+          background: var(--mf-surface-2);
+          color: var(--mf-text);
           outline: none;
-        }
-
-        .composerInput::placeholder {
-          color: rgba(233, 237, 239, 0.55);
+          font-size: 15px;
         }
 
         .sendBtn {
-          border-radius: 9999px;
-          padding: 10px 14px;
-          border: 1px solid rgba(0, 168, 132, 0.35);
-          background: #00a884;
-          color: #052b24;
-          font-weight: 900;
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          background: var(--mf-primary);
+          color: var(--mf-primary-text);
+          border: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           cursor: pointer;
+          transition: transform 0.1s;
+        }
+
+        .sendBtn:active {
+          transform: scale(0.9);
         }
 
         .sendBtn:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
+          opacity: 0.5;
         }
 
-        .muted {
-          color: rgba(233, 237, 239, 0.65);
-        }
-
-        .errorText {
-          color: #ffb4b4;
-        }
-
-        /* Mobile: show conversation full screen */
-        .chatGrid.hasSelected .friendsPane {
+        .noSelectionPane {
           display: none;
+          flex: 1;
+          align-items: center;
+          justify-content: center;
+          background: var(--mf-surface);
+          border-radius: 24px;
+          border: 1px solid var(--mf-border);
+        }
+
+        .noSelectionContent {
+          text-align: center;
+          max-width: 300px;
+        }
+
+        .noSelectionIcon {
+          font-size: 48px;
+          margin-bottom: 16px;
+        }
+
+        .noSelectionContent h3 {
+          font-size: 20px;
+          margin: 0 0 8px;
+        }
+
+        .noSelectionContent p {
+          color: var(--mf-muted);
+          font-size: 15px;
+        }
+
+        .spinner {
+          width: 24px;
+          height: 24px;
+          border: 3px solid var(--mf-border);
+          border-top-color: var(--mf-primary);
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+          margin: 0 auto;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 919px) {
+          .chatGrid.hasSelected .friendsPane {
+            display: none;
+          }
         }
 
         @media (min-width: 920px) {
-          .chatRoot {
-            padding-left: 16px;
-            padding-right: 16px;
+          .chatGrid {
+            grid-template-columns: 350px 1fr;
           }
-
-          .chatGrid.hasSelected {
-            grid-template-columns: minmax(320px, 1fr) 2fr;
-            align-items: start;
-          }
-
-          .chatGrid.hasSelected .friendsPane {
-            display: flex;
-          }
-
-          .conversationPane {
-            min-height: calc(100vh - 12px - 12px - 96px - 56px);
-          }
-
-          .iconBtn {
+          .backBtn {
             display: none;
+          }
+          .noSelectionPane {
+            display: flex;
           }
         }
       `}</style>

@@ -13,6 +13,8 @@ import { Link } from "expo-router";
 import { AuthForm } from "@/components/AuthForm";
 import { apiFetchJson, getAppVersionLabel } from "@/lib/api";
 import { asApiMessage, useAuth } from "@/lib/auth";
+import { useColorScheme } from "@/components/useColorScheme";
+import Colors from "@/constants/Colors";
 
 type Friend = { id: string; username: string | null };
 
@@ -22,6 +24,8 @@ export default function ChatTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const colorScheme = useColorScheme();
+  const theme = Colors[colorScheme ?? "light"];
 
   const friendsSorted = useMemo(() => {
     return [...friends]
@@ -54,16 +58,16 @@ export default function ChatTab() {
 
   if (!isHydrated) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator />
+      <View style={[styles.center, { backgroundColor: theme.background }]}>
+        <ActivityIndicator color={theme.tint} />
       </View>
     );
   }
 
   if (!token || !user) {
     return (
-      <ScrollView contentContainerStyle={styles.root}>
-        <Text style={styles.header}>MapFriend</Text>
+      <ScrollView contentContainerStyle={[styles.root, { backgroundColor: theme.background }]}>
+        <Text style={[styles.header, { color: theme.text }]}>MapFriend</Text>
         <Text style={styles.subheader}>{getAppVersionLabel()}</Text>
         <AuthForm />
       </ScrollView>
@@ -72,31 +76,61 @@ export default function ChatTab() {
 
   return (
     <ScrollView
-      contentContainerStyle={styles.root}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load("refresh")} />}
+      contentContainerStyle={[styles.root, { backgroundColor: theme.background }]}
+      refreshControl={
+        <RefreshControl 
+          refreshing={refreshing} 
+          onRefresh={() => load("refresh")} 
+          tintColor={theme.tint}
+        />
+      }
     >
-      <Text style={styles.header}>Chats</Text>
-      <Text style={styles.subheader}>@{user.username}</Text>
+      <View style={styles.headerRow}>
+        <View>
+          <Text style={[styles.header, { color: theme.text }]}>Messages</Text>
+          <Text style={styles.subheader}>@{user.username}</Text>
+        </View>
+      </View>
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator />
+          <ActivityIndicator color={theme.tint} />
         </View>
       ) : error ? (
         <Text style={styles.error}>{error}</Text>
       ) : friendsSorted.length === 0 ? (
-        <Text style={styles.muted}>No friends yet. Accept a request in Settings.</Text>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No messages yet.</Text>
+          <Text style={styles.emptySub}>Connect with people in Explore to start chatting.</Text>
+        </View>
       ) : (
-        <View style={styles.listCard}>
+        <View style={[styles.listCard, { 
+          backgroundColor: colorScheme === "dark" ? "rgba(17,27,33,0.92)" : "#f9f9f9",
+          borderColor: colorScheme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)"
+        }]}>
           {friendsSorted.map((f) => (
             <Link key={f.id} href={`/chat/${encodeURIComponent(f.username)}`} asChild>
-              <Pressable style={styles.row}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{f.username.slice(0, 2).toUpperCase()}</Text>
+              <Pressable style={({ pressed }) => [
+                styles.row,
+                { 
+                  backgroundColor: pressed ? (colorScheme === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)") : "transparent",
+                  borderBottomColor: colorScheme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)"
+                }
+              ]}>
+                <View style={[styles.avatar, {
+                  backgroundColor: colorScheme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)",
+                  borderColor: colorScheme === "dark" ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.05)"
+                }]}>
+                  <Text style={[styles.avatarText, { color: theme.text }]}>
+                    {f.username.slice(0, 2).toUpperCase()}
+                  </Text>
                 </View>
                 <View style={styles.meta}>
-                  <Text style={styles.name}>{f.username}</Text>
+                  <Text style={[styles.name, { color: theme.text }]}>{f.username}</Text>
                   <Text style={styles.preview}>Tap to chat</Text>
+                </View>
+                <View style={styles.rightSide}>
+                  <View style={[styles.dot, { backgroundColor: "#00a884" }]} />
                 </View>
               </Pressable>
             </Link>
@@ -110,43 +144,66 @@ export default function ChatTab() {
 const styles = StyleSheet.create({
   root: {
     minHeight: "100%",
-    padding: 16,
-    backgroundColor: "#0b141a",
-    gap: 10,
+    padding: 20,
+    gap: 16,
   },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  header: { fontSize: 26, fontWeight: "900", color: "#e9edef" },
-  subheader: { color: "rgba(233,237,239,0.65)", marginBottom: 8 },
-  error: { color: "#ffb4b4" },
-  muted: { color: "rgba(233,237,239,0.65)" },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginBottom: 8,
+  },
+  header: { fontSize: 34, fontWeight: "800", letterSpacing: -1 },
+  subheader: { color: "rgba(120,120,120,0.7)", fontSize: 16, fontWeight: "600" },
+  error: { color: "#ff4d4d", textAlign: "center", padding: 20 },
+  emptyContainer: {
+    padding: 60,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyText: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "rgba(120,120,120,0.9)",
+    marginBottom: 8,
+  },
+  emptySub: {
+    fontSize: 14,
+    color: "rgba(120,120,120,0.6)",
+    textAlign: "center",
+  },
   listCard: {
-    borderRadius: 18,
-    backgroundColor: "rgba(17,27,33,0.92)",
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
     overflow: "hidden",
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    gap: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.06)",
   },
   avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 9999,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { color: "#e9edef", fontWeight: "900" },
+  avatarText: { fontWeight: "800", fontSize: 18 },
   meta: { flex: 1 },
-  name: { color: "#e9edef", fontWeight: "900", fontSize: 15 },
-  preview: { color: "rgba(233,237,239,0.65)", marginTop: 2 },
+  name: { fontWeight: "700", fontSize: 17, marginBottom: 2 },
+  preview: { color: "rgba(120,120,120,0.7)", fontSize: 14 },
+  rightSide: {
+    alignItems: "flex-end",
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  }
 });
